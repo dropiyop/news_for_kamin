@@ -4,6 +4,7 @@ from aiogram import Bot, Dispatcher
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 import asyncio
 import re
 import random
@@ -35,10 +36,23 @@ used_titles = set()  # Инициализация списка для хране
 user_prompts = {}
 
 
-telegram_channels = set([
-    "https://t.me/cgevent",
-    "https://t.me/news_channel"
-])
+CHANNELS_FILE = "channels.json"
+
+# Загружаем список каналов при старте
+def load_channels():
+    if os.path.exists(CHANNELS_FILE):
+        with open(CHANNELS_FILE, "r", encoding="utf-8") as f:
+            return set(json.load(f))
+    return set()
+
+# Сохраняем список каналов
+def save_channels():
+    with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
+        json.dump(list(telegram_channels), f, indent=4, ensure_ascii=False)
+
+# Инициализация списка каналов
+telegram_channels = load_channels()
+
 
 
 
@@ -225,7 +239,7 @@ def get_inline_keyboard4():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="Добавить канал", callback_data="add_channel")],
     [InlineKeyboardButton(text="Список каналов", callback_data="list_channels")],
-    [InlineKeyboardButton(text="Удалить канал", callback_data="remove_channel")],
+    [InlineKeyboardButton(text="Удалить ВСЕ каналы", callback_data="remove_all_channels")],
     [InlineKeyboardButton(text="Назад", callback_data="back_to_main")]
     ])
     return keyboard
@@ -242,15 +256,116 @@ def back():
 @dp.callback_query(lambda c: c.data == "add_channel")
 async def add_channel_request(callback: types.CallbackQuery):
     """Сообщение о добавлении канала"""
-    await callback.message.edit_text("Отправьте ссылку на канал в формате:\n`https://t.me/channel_name`", parse_mode="Markdown",reply_markup=back())
+    await callback.message.edit_text("Можно много или одну ссылку в формате:\n`https://t.me/channel_name`", parse_mode="Markdown",reply_markup=back())
+
+
+@dp.message(lambda message: message.text.startswith("https://t.me/"))
+async def add_channel(message: types.Message):
+
+    raw_text = message.text.strip()
+
+    # Разделяем текст по пробелу, запятой или новой строке
+    channels = {ch.strip() for ch in raw_text.replace(",", " ").split()}
+
+    # Фильтруем только корректные ссылки
+    valid_channels = {ch for ch in channels if ch.startswith("https://t.me/")}
+
+    if not valid_channels:
+        await message.reply("Не найдено корректных ссылок! Проверьте формат.")
+        return
+
+
+    # Определяем уже существующие и новые каналы
+    new_channels = valid_channels - telegram_channels
+    existing_channels = valid_channels & telegram_channels
+
+    # Добавляем новые каналы в множество
+    telegram_channels.update(new_channels)
+    save_channels()
+
+
+    # Формируем ответ
+    response = "Добавлены каналы:\n" + "\n".join(f" {ch}" for ch in new_channels) if new_channels else ""
+    if existing_channels:
+        response += "\n!!! Эти каналы уже были в списке:\n" + "\n".join(f" {ch}" for ch in existing_channels)
+
+    await message.reply(response or " Нет новых каналов для добавления.", reply_markup=back(), disable_web_page_preview=True)
+
+
+def escape_markdown(text: str) -> str:
+    """Экранирует специальные символы MarkdownV2"""
+    escape_chars = r"_*[]()~`>#+-=|{}.!<>"
+    return re.sub(r"([%s])" % re.escape(escape_chars), r"\\\1", text)
+
+
+@dp.callback_query(lambda c: c.data == "list_channels")
+async def list_channels(callback: types.CallbackQuery):
+    if not telegram_channels:
+        await callback.message.edit_text("Список каналов пуст.", reply_markup=back())
+        return
+
+    keyboard = InlineKeyboardBuilder()
+
+    for i, channel in enumerate(telegram_channels, start=1):
+        keyboard.button(text=f"Удалить {i}", callback_data=f"remove_channel:{channel}")
+
+    keyboard.button(text="Назад", callback_data="back")
+    keyboard.adjust(1)  # Каждая кнопка в отдельной строке
+
+    channels_text = "\n".join(f"{i} {escape_markdown(channel)}" for i, channel in enumerate(telegram_channels, start=1))
+    await callback.message.edit_text(f"*Список каналов:*\n\n{channels_text}",
+                                     parse_mode="MarkdownV2",
+                                     reply_markup=keyboard.as_markup(),
+                                     disable_web_page_preview=True)
+
+
+
+@dp.callback_query(lambda c: c.data.startswith("remove_channel:"))
+async def remove_channel(callback: types.CallbackQuery):
+
+    channel = callback.data.replace("remove_channel:", "")
+
+    if channel not in telegram_channels:
+        await callback.answer("Канал уже удалён!", show_alert=True)
+        return
+
+    telegram_channels.remove(channel)
+    save_channels()  # Обновляем JSON
+
+    await callback.answer(f"Канал {channel} удален!")
+
+    # Обновляем список каналов
+    await list_channels(callback)
+
+
+@dp.callback_query(lambda c: c.data == "remove_all_channels")
+async def remove_all_channels(callback: types.CallbackQuery):
+    """Удаление всех каналов"""
+    if not telegram_channels:
+        await callback.answer("Список каналов уже пуст!", show_alert=True)
+        return
+
+    telegram_channels.clear()  # Очищаем множество
+    save_channels()  # Обновляем JSON (если используется)
+
+    await callback.answer("Все каналы успешно удалены!", show_alert=True)
+
+
+
+
+@dp.callback_query(lambda c: c.data == "back")
+async def back_to_main(callback: types.CallbackQuery):
+
+    await callback.message.edit_text("Сделай это снова", parse_mode="Markdown",reply_markup=get_inline_keyboard4())
+
+
 
 
 @dp.callback_query(lambda c: c.data == "back_to_main")
 async def back_to_main(callback: types.CallbackQuery):
 
-    await callback.message.edit_text("Сделай это снова", parse_mode="Markdown",reply_markup=get_inline_keyboard4())
+    await callback.message.edit_text("Давай, придумывай", parse_mode="Markdown",reply_markup=get_inline_keyboard())
 
-    if
 
 
 
@@ -258,7 +373,7 @@ async def back_to_main(callback: types.CallbackQuery):
 async def edit_channels_menu(callback: types.CallbackQuery):
 
 
-    await callback.message.edit_text("⚙ Выберите действие:", reply_markup= get_inline_keyboard4())
+    await callback.message.edit_text("Действуй:", reply_markup= get_inline_keyboard4())
 
 
 @dp.callback_query(lambda c: c.data == "toggle_prompt")
