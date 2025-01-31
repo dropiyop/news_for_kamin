@@ -1,0 +1,11 @@
+aiogram
+openai
+requests
+dependencies
+aiohttp
+feedparser
+aiogram_calendar
+httpx-socks
+telethon
+httpx
+python-dotenv
