@@ -9,3 +9,4 @@ httpx-socks
 telethon
 httpx
 python-dotenv
+sqlite3

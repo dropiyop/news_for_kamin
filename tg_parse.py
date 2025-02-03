@@ -4,6 +4,7 @@ from telethon.sync import TelegramClient
 from telethon.tl.functions.messages import GetDialogsRequest
 from telethon.tl.types import InputPeerEmpty
 from telethon.tl.functions.messages import GetHistoryRequest
+from telethon.errors import ChannelInvalidError, ChannelPrivateError, ChannelTooBigError
 from telethon.tl.types import PeerChannel
 import dotenv
 import asyncio
@@ -21,7 +22,7 @@ client = TelegramClient(phone, api_id, api_hash)
 
 async def fetch_messages_by_date(chat_id):
     end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=1)
+    start_date = end_date - timedelta(days=7)
 
     messages = []
     offset_id = 0  # Начинаем с последнего сообщения
@@ -61,10 +62,24 @@ async def fetch_messages_by_date(chat_id):
 async def parse(url_channel):
 
     async with client:
-        # Получаем entity (объект чата)
-        entity = await client.get_entity(url_channel)
-        messages = await fetch_messages_by_date(entity)
-        return messages
+        try:
+            # Получаем entity (объект чата)
+            entity = await client.get_entity(url_channel)
+
+            # Получаем сообщения
+            messages = await fetch_messages_by_date(entity)
+            return messages
+
+        except ChannelInvalidError:
+            return " Ошибка: Некорректная ссылка на канал."
+        except ChannelPrivateError:
+            return " Ошибка: Канал приватный. Подключите бота к нему."
+        except ChannelTooBigError:
+            return " Ошибка: Канал не найден. Проверьте URL."
+        except ValueError:
+            return "Ошибка: Не удалось найти канал. Возможно, URL неверный."
+        except Exception as e:
+            return f"Неизвестная ошибка: {str(e)}"
 
 
 
