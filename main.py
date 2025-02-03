@@ -19,6 +19,75 @@ import os
 import dotenv
 import httpx
 import httpx_socks
+from database import  get_connection
+import sqlite3
+
+
+def add_user_channel(user_id, channel):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("INSERT OR IGNORE INTO user_channels (user_id, channel) VALUES (?, ?)", (user_id, channel))
+    conn.commit()
+    conn.close()
+
+def remove_user_channel(user_id, channel):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+
+    cursor.execute("DELETE FROM user_channels WHERE user_id = ? AND channel = ?", (user_id, channel))
+    conn.commit()
+    conn.close()
+
+def all_remove_channels(user_id):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM user_channels WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
+
+def get_user_channels(user_id):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT channel FROM user_channels WHERE user_id = ?", (user_id,))
+    channels = [row[0] for row in cursor.fetchall()]
+    conn.close()
+    return channels
+
+def add_init_client(user_id,contact_username,contact_name,contact_phone):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+          INSERT OR IGNORE INTO init_clients (user_id, contact_username, contact_name, contact_phone) 
+          VALUES (?, ?, ?, ?)
+      """, (user_id, contact_username, contact_name, contact_phone))
+
+    conn.commit()
+    conn.close()
+
+def get_client_user_id(user_id):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT user_id FROM init_clients WHERE user_id = ?", (user_id,))
+
+    result = cursor.fetchone()  # Возвращает одну строку, если она существует
+
+    conn.close()
+
+    # Если результат найден, возвращаем user_id, иначе None
+    return result[0] if result else None
+
+
 
 
 
@@ -29,29 +98,12 @@ flag = False
 generate_text = None,
 image_url = None
 
-init_clients_file = "init_clients.json"
-USED_TITLES_FILE = "used_titles.json"
+
 init_clients = set()  # Инициализация списка для хранения данных пользователей
 used_titles = set()  # Инициализация списка для хранения использованных заголовков
 user_prompts = {}
 
 
-CHANNELS_FILE = "channels.json"
-
-# Загружаем список каналов при старте
-def load_channels():
-    if os.path.exists(CHANNELS_FILE):
-        with open(CHANNELS_FILE, "r", encoding="utf-8") as f:
-            return set(json.load(f))
-    return set()
-
-# Сохраняем список каналов
-def save_channels():
-    with open(CHANNELS_FILE, "w", encoding="utf-8") as f:
-        json.dump(list(telegram_channels), f, indent=4, ensure_ascii=False)
-
-# Инициализация списка каналов
-telegram_channels = load_channels()
 
 
 
@@ -61,60 +113,12 @@ http_client = httpx.AsyncClient(transport=transport)
 
 openai_client =  openai.AsyncOpenAI(api_key=os.getenv('OPENAI_TOKEN'), http_client=http_client)
 
-def load_init_clients():
-    global init_clients
-    try:
-        with open(init_clients_file, 'r', encoding='utf-8') as file:
-            data = file.read().strip()  # Считываем данные и убираем пробелы
-            if data:  # Если файл не пустой
-                loaded_data = json.loads(data)  # Загружаем данные из JSON
-                init_clients = set(tuple(client) for client in loaded_data)  # Преобразуем каждый элемент в кортеж для создания множества
-            else:
-                init_clients = set()  # Если файл пустой, инициализируем пустой set
-    except (FileNotFoundError, json.JSONDecodeError):
-        print("Ошибка при чтении JSON. Файл может быть поврежден или не найден.")
-        init_clients = set()  # Инициализируем пустой set при ошибке
 
 
-def save_init_clients():
-    try:
-        with open(init_clients_file, 'w', encoding='utf-8') as file:
-            json.dump([list(client) for client in init_clients], file, ensure_ascii=False, indent=4)  # Сохраняем как список списков для удобного JSON
-    except Exception as e:
-        print(f"Ошибка при сохранении клиентов: {e}")
-
-
-def add_user_to_init_clients(contact_id, contact_username, contact_name, contact_phone):
-    # Добавляем информацию о пользователе в set
-    user_info = (contact_id, contact_username, contact_name, contact_phone)  # Используем кортеж
-    init_clients.add(user_info)  # Добавляем в множество
-    save_init_clients()  # Сохраняем изменения в файле
-
-
-def load_used_titles():
-    global used_titles
-    try:
-        with open(USED_TITLES_FILE, 'r', encoding='utf-8') as file:
-            used_titles = set(json.load(file))
-    except FileNotFoundError:
-        used_titles = set()
-
-
-def save_used_titles():
-    try:
-        with open(USED_TITLES_FILE, 'r', encoding='utf-8') as file:
-            existing_titles = set(json.load(file))
-    except FileNotFoundError:
-        existing_titles = set()
-
-    updated_titles = existing_titles.union(used_titles)
-
-    with open(USED_TITLES_FILE, 'w', encoding='utf-8') as file:
-        json.dump(list(updated_titles), file, ensure_ascii=False, indent=4)
 
 
 async def shutdown_handler(bot):
-    save_used_titles()
+
     await bot.session.close()
 
 
@@ -182,7 +186,7 @@ async def contact_handler(message: types.Message, state: FSMContext) -> None:
                 for record in data:
                     if clean_phone_number(contact_phone)[1:] == clean_phone_number(record['mobilePhone'])[1:]:
                         contact_name = record['shortName']
-                        add_user_to_init_clients(contact_id, contact_username, contact_name, contact_phone)
+                        add_init_client(contact_id, contact_username, contact_name, contact_phone)
                         fio = record['name'].split(" ")
                         await message.answer(f"{fio[1]} {fio[2]}, Поздравляю! "
                                              f"Вы можете использовать функциональность бота",
@@ -192,8 +196,7 @@ async def contact_handler(message: types.Message, state: FSMContext) -> None:
 
                         break
                 else:
-                    # Пользователь не найден в базе данных
-                    add_user_to_init_clients(contact_id, contact_username, contact_name, contact_phone)
+
                     await message.answer("К сожалению, вы не были найдены в базе данных сотрудников Каскада. "
                                          "Вы не сможете использовать бота.", reply_markup=types.ReplyKeyboardRemove())
             else:
@@ -259,9 +262,10 @@ async def add_channel_request(callback: types.CallbackQuery):
     await callback.message.edit_text("Можно много или одну ссылку в формате:\n`https://t.me/channel_name`", parse_mode="Markdown",reply_markup=back())
 
 
+
 @dp.message(lambda message: message.text.startswith("https://t.me/"))
 async def add_channel(message: types.Message):
-
+    user_id = message.from_user.id
     raw_text = message.text.strip()
 
     # Разделяем текст по пробелу, запятой или новой строке
@@ -275,13 +279,14 @@ async def add_channel(message: types.Message):
         return
 
 
-    # Определяем уже существующие и новые каналы
-    new_channels = valid_channels - telegram_channels
-    existing_channels = valid_channels & telegram_channels
 
-    # Добавляем новые каналы в множество
-    telegram_channels.update(new_channels)
-    save_channels()
+    # Определяем уже существующие и новые каналы
+    new_channels = valid_channels - set(get_user_channels(user_id))
+    existing_channels = valid_channels & set(get_user_channels(user_id))
+
+    # Добавляем новые каналы в базу данных
+    for channel in new_channels:
+        add_user_channel(user_id, channel)
 
 
     # Формируем ответ
@@ -300,19 +305,22 @@ def escape_markdown(text: str) -> str:
 
 @dp.callback_query(lambda c: c.data == "list_channels")
 async def list_channels(callback: types.CallbackQuery):
-    if not telegram_channels:
+    user_id = callback.from_user.id  # Получаем user_id
+    channels = get_user_channels(user_id)
+
+    if not channels:
         await callback.message.edit_text("Список каналов пуст.", reply_markup=back())
         return
 
     keyboard = InlineKeyboardBuilder()
 
-    for i, channel in enumerate(telegram_channels, start=1):
+    for i, channel in enumerate(channels, start=1):
         keyboard.button(text=f"Удалить {i}", callback_data=f"remove_channel:{channel}")
 
     keyboard.button(text="Назад", callback_data="back")
     keyboard.adjust(1)  # Каждая кнопка в отдельной строке
 
-    channels_text = "\n".join(f"{i} {escape_markdown(channel)}" for i, channel in enumerate(telegram_channels, start=1))
+    channels_text = "\n".join(f"{i} {escape_markdown(channel)}" for i, channel in enumerate(channels, start=1))
     await callback.message.edit_text(f"*Список каналов:*\n\n{channels_text}",
                                      parse_mode="MarkdownV2",
                                      reply_markup=keyboard.as_markup(),
@@ -322,35 +330,64 @@ async def list_channels(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data.startswith("remove_channel:"))
 async def remove_channel(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+
+    channels = get_user_channels(user_id)
 
     channel = callback.data.replace("remove_channel:", "")
 
-    if channel not in telegram_channels:
+    if channel not in channels:
         await callback.answer("Канал уже удалён!", show_alert=True)
         return
 
-    telegram_channels.remove(channel)
-    save_channels()  # Обновляем JSON
+    remove_user_channel(user_id,channel)
+
 
     await callback.answer(f"Канал {channel} удален!")
 
     # Обновляем список каналов
     await list_channels(callback)
 
+def yesorno():
+    keyboard = (InlineKeyboardMarkup
+    (inline_keyboard=[
+    [InlineKeyboardButton(text="ДА", callback_data="yes")],
+    [InlineKeyboardButton(text="нет", callback_data="no")]
+    ])
+    )
+
+    return keyboard
+
+
+
 
 @dp.callback_query(lambda c: c.data == "remove_all_channels")
+async def confirm_remove_all_channels(callback: types.CallbackQuery):
+
+    await callback.message.edit_text("ТЫ УВЕРЕН?", parse_mode="Markdown",reply_markup=yesorno())
+
+
+
+@dp.callback_query(lambda c: c.data == "yes")
 async def remove_all_channels(callback: types.CallbackQuery):
-    """Удаление всех каналов"""
-    if not telegram_channels:
-        await callback.answer("Список каналов уже пуст!", show_alert=True)
+    """Удаление всех каналов после подтверждения"""
+    user_id = callback.from_user.id
+
+    channels = get_user_channels(user_id)
+
+    if not channels:
+        await callback.answer("Список каналов пуст", show_alert=True)
         return
 
-    telegram_channels.clear()  # Очищаем множество
-    save_channels()  # Обновляем JSON (если используется)
+    # Удаляем все каналы пользователя из базы данных
+    all_remove_channels(user_id)
 
-    await callback.answer("Все каналы успешно удалены!", show_alert=True)
+    await callback.message.edit_text(" Все каналы успешно удалены!", parse_mode="Markdown", reply_markup=get_inline_keyboard4())
 
+@dp.callback_query(lambda c: c.data == "no")
+async def remove_all_channels(callback: types.CallbackQuery):
 
+    await callback.message.edit_text("ты не уверен", parse_mode="Markdown", reply_markup=get_inline_keyboard4())
 
 
 @dp.callback_query(lambda c: c.data == "back")
@@ -432,12 +469,24 @@ async def generate_news(callback_query):
                   )
     else:
 
-        url_channel = random.choice(list(telegram_channels))
-        messages = await tg_parse.parse(url_channel)
-        print (messages)
+        channels = get_user_channels(user_id)
 
-        for msg in messages:
-            title_description = f"{slice_text(msg.message, num_words=150)}"
+        url_channel = random.choice(channels)
+
+        try:
+            messages = await tg_parse.parse(url_channel)
+
+            if isinstance(messages, str):  # Если функция вернула строку (ошибка)
+                await bot.send_message(chat_id, messages)  # Отправляем пользователю сообщение об ошибке
+            else:
+                # Обрабатываем полученные сообщения
+                for msg in messages:
+                    print(msg)
+
+        except Exception as e:
+            await bot.send_message(chat_id, f"🚨 Ошибка при парсинге: {str(e)}")
+
+
 
         new_titles = [
             (msg.date)
@@ -598,8 +647,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
-        load_used_titles()
+
         asyncio.run(main())
     except (KeyboardInterrupt, SystemExit):
-        save_used_titles()
         pass
