@@ -2,6 +2,8 @@ from sys import breakpointhook
 
 import openai
 from pyexpat.errors import messages
+from aiogram.exceptions import TelegramForbiddenError
+from select import error
 
 import tg_parse
 from aiogram import Bot, Dispatcher
@@ -23,75 +25,7 @@ import os
 import dotenv
 import httpx
 import httpx_socks
-from database import  get_connection
-import sqlite3
-
-
-def add_user_channel(user_id, channel):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("INSERT OR IGNORE INTO user_channels (user_id, channel) VALUES (?, ?)", (user_id, channel))
-    conn.commit()
-    conn.close()
-
-def remove_user_channel(user_id, channel):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-
-    cursor.execute("DELETE FROM user_channels WHERE user_id = ? AND channel = ?", (user_id, channel))
-    conn.commit()
-    conn.close()
-
-def all_remove_channels(user_id):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute("DELETE FROM user_channels WHERE user_id = ?", (user_id,))
-    conn.commit()
-    conn.close()
-
-def get_user_channels(user_id):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT channel FROM user_channels WHERE user_id = ?", (user_id,))
-    channels = [row[0] for row in cursor.fetchall()]
-    conn.close()
-    return channels
-
-def add_init_client(user_id,contact_username,contact_name,contact_phone):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-          INSERT OR IGNORE INTO init_clients (user_id, contact_username, contact_name, contact_phone) 
-          VALUES (?, ?, ?, ?)
-      """, (user_id, contact_username, contact_name, contact_phone))
-
-    conn.commit()
-    conn.close()
-
-def get_client_user_id(user_id):
-
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT user_id FROM init_clients WHERE user_id = ?", (user_id,))
-
-    result = cursor.fetchone()  # Возвращает одну строку, если она существует
-
-    conn.close()
-
-    # Если результат найден, возвращаем user_id, иначе None
-    return result[0] if result else None
-
-
+import editabs
 
 
 
@@ -173,6 +107,7 @@ async def contact_handler(message: types.Message, state: FSMContext) -> None:
     contact_name = contact.first_name
     contact_phone = contact.phone_number
     contact_username = message.from_user.username
+    chat_id = None
 
     if contact_id == message.from_user.id:
         if not any([contact_id == user[0] for user in init_clients]):
@@ -189,7 +124,7 @@ async def contact_handler(message: types.Message, state: FSMContext) -> None:
                 for record in data:
                     if clean_phone_number(contact_phone)[1:] == clean_phone_number(record['mobilePhone'])[1:]:
                         contact_name = record['shortName']
-                        add_init_client(contact_id, contact_username, contact_name, contact_phone)
+                        editabs.add_init_client(contact_id, chat_id, contact_username, contact_name, contact_phone)
                         fio = record['name'].split(" ")
                         await message.answer(f"{fio[1]} {fio[2]}, Поздравляю! "
                                              f"Вы можете использовать функциональность бота",
@@ -207,6 +142,8 @@ async def contact_handler(message: types.Message, state: FSMContext) -> None:
                 await message.answer("Возникли проблемы при подключении к базе данных Каскада. Попробуйте позже.")
     else:
         await message.answer("Ну так не честно, это же не ваш контакт")
+
+
 
 
 def get_inline_keyboard():
@@ -284,12 +221,12 @@ async def add_channel(message: types.Message):
 
 
     # Определяем уже существующие и новые каналы
-    new_channels = valid_channels - set(get_user_channels(user_id))
-    existing_channels = valid_channels & set(get_user_channels(user_id))
+    new_channels = valid_channels - set(editabs.get_user_channels(user_id))
+    existing_channels = valid_channels & set(editabs.get_user_channels(user_id))
 
     # Добавляем новые каналы в базу данных
     for channel in new_channels:
-        add_user_channel(user_id, channel)
+        editabs.add_user_channel(user_id, channel)
 
 
     # Формируем ответ
@@ -309,7 +246,7 @@ def escape_markdown(text: str) -> str:
 @dp.callback_query(lambda c: c.data == "list_channels")
 async def list_channels(callback: types.CallbackQuery):
     user_id = callback.from_user.id  # Получаем user_id
-    channels = get_user_channels(user_id)
+    channels = editabs.get_user_channels(user_id)
 
     if not channels:
         await callback.message.edit_text("Список каналов пуст.", reply_markup=back())
@@ -335,7 +272,7 @@ async def list_channels(callback: types.CallbackQuery):
 async def remove_channel(callback: types.CallbackQuery):
     user_id = callback.from_user.id
 
-    channels = get_user_channels(user_id)
+    channels = editabs.get_user_channels(user_id)
 
     channel = callback.data.replace("remove_channel:", "")
 
@@ -343,7 +280,7 @@ async def remove_channel(callback: types.CallbackQuery):
         await callback.answer("Канал уже удалён!", show_alert=True)
         return
 
-    remove_user_channel(user_id,channel)
+    editabs.remove_user_channel(user_id,channel)
 
 
     await callback.answer(f"Канал {channel} удален!")
@@ -376,14 +313,14 @@ async def remove_all_channels(callback: types.CallbackQuery):
     """Удаление всех каналов после подтверждения"""
     user_id = callback.from_user.id
 
-    channels = get_user_channels(user_id)
+    channels = editabs.get_user_channels(user_id)
 
     if not channels:
         await callback.answer("Список каналов пуст", show_alert=True)
         return
 
     # Удаляем все каналы пользователя из базы данных
-    all_remove_channels(user_id)
+    editabs.all_remove_channels(user_id)
 
     await callback.message.edit_text(" Все каналы успешно удалены!", parse_mode="Markdown", reply_markup=get_inline_keyboard4())
 
@@ -455,6 +392,7 @@ def slice_text(text, num_words):
 
 async def generate_news(callback_query):
     global generate_text, image_url, used_titles, user_prompts
+
     message_id = callback_query.message.message_id
     chat_id = callback_query.message.chat.id
     user_id = callback_query.from_user.id
@@ -466,7 +404,7 @@ async def generate_news(callback_query):
                                           "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
                                           "\n1.Всего в статье должно быть 1500 символов. НИКОГДА НЕ МОЖЕТ БЫТЬ БОЛЬШЕ 1500 СИМВОЛОВ."
                                           "\n2.Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
-                                          "\n3.Структурные наименования писать не нужно."
+                                          "\n3.Структурные наименования писать не нужно." 
                                           "\n4.Статья должна иметь завершенный вид и быть интересной"
                                           "\nРазделение на абзацы должно происходить когда мысль завершена и ты продолжаешь повествование дальше"
                                           "\nОграничение на количество символов статьи = 1500"
@@ -475,9 +413,8 @@ async def generate_news(callback_query):
     else:
 
 
-        # url_channel = random.choice(channels)
 
-        channels = get_user_channels(user_id)
+        channels = editabs.get_user_channels(user_id)
 
         if not channels:  # Если список пуст
 
@@ -488,7 +425,7 @@ async def generate_news(callback_query):
                 messages = await tg_parse.parse(channel)
 
                 if isinstance(messages, str):
-                    await bot.send_message(chat_id, messages)  # Отправляем пользователю сообщение об ошибке
+                    await bot.send_message(chat_id, messages, reply_markup=get_inline_keyboard4())  # Отправляем пользователю сообщение об ошибке
                     return
 
                 else:
@@ -496,7 +433,7 @@ async def generate_news(callback_query):
                     all_messages = []
                     # Обрабатываем полученные сообщения
                     for msg in messages:
-                        print(msg.message)
+                        # print(msg.message)
                         all_messages.append(msg.message)
 
                     selected_description = "\n".join(all_messages)
@@ -540,80 +477,87 @@ async def generate_news(callback_query):
 
     await bot.send_message(chat_id=chat_id, text="Генерация новости: 50%")
 
-    # response = openai.ChatCompletion.create(
-    #     model="gpt-4o-mini",
-    #     messages=[
-    #         {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных title и description. Ограничение на количество символов в статье строго 900"},
-    #         {"role": "user", "content": prompt}
-    #     ],
-    #     max_tokens=1000,
-    #     temperature=0.7,
-    # )
+
+
+    openai_chat_id = editabs.get_chat_id(user_id)
 
 
 
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных  description. Ограничение на количество символов в статье строго 1500"},
-            {"role": "user", "content": prompt}
-            ],
-        max_tokens=1000,
-        temperature=0.7,
-        )
+    try:
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных  description. Ограничение на количество символов в статье строго 1500"},
+                {"role": "user", "content": prompt}
+                ],
+            max_tokens=1000,
+            temperature=0.7,
+            )
 
-    # Получение текста из ответа
-    generate_text = response.choices[0].message.content.strip()
-    print(prompt)
+        print (response)
+
+        # Получение текста из ответа
+        generate_text = response.choices[0].message.content.strip()
+        openai_chat_id = response.id
+        print(openai_chat_id)
+
+    except error:
+        print(error)
+
+    if openai_chat_id is None:
+        editabs.update_chat_id(user_id, openai_chat_id)
+
+
+    # print(prompt)
     await bot.send_message(chat_id=chat_id, text="Генерация новости: 70%")
 
-    # Генерация изображения на основе текста статьи
-    image_prompt = f"Create an illustration for the following article: {generate_text}"
-    image_response = await openai_client.images.generate(
-        model="dall-e-3",
-        prompt=image_prompt,
-        size="1024x1024",
-        quality="standard",
-        n=1
-        )
+#     # Генерация изображения на основе текста статьи
+#     image_prompt = f"Create an illustration for the following article: {generate_text}"
+#     image_response = await openai_client.images.generate(
+#         model="dall-e-3",
+#         prompt=image_prompt,
+#         size="1024x1024",
+#         quality="standard",
+#         n=1
+#         )
+#
+#     image_url = image_response.data[0].url
+#     await bot.send_message(chat_id=chat_id, text="Генерация новости: 100%")
+#
+#     return generate_text, image_url
+#
+#
+# @dp.callback_query(lambda c: c.data == "new_image")
+# async def new_image_handler(callback_query: types.CallbackQuery):
+#     global generate_text, image_url
+#
+#     chat_id = callback_query.message.chat.id
+#
+#     # Проверяем, определен ли текст статьи
+#     if not generate_text:
+#         await callback_query.message.reply("Ошибка: текст статьи не найден. Пожалуйста, сгенерируйте новость сначала.")
+#         return
+#
+#     await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 20%")
+#
+#     # Генерация изображения на основе уже сгенерированного текста статьи
+#     image_prompt = f"Create an illustration for the following article: {generate_text}"
+#     image_response = await openai_client.images.generate(
+#         model="dall-e-3",
+#         prompt=image_prompt,
+#         size="1024x1024",
+#         quality="standard",
+#         n=1
+#         )
+#
+#     # Сохранение нового URL изображения
+#     image_url = image_response.data[0].url
+#     await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 100%")
+#
+#     # Отправка нового изображения пользователю
+#     await bot.send_message(chat_id=chat_id, text=f"({generate_text})\n\n[Изображение статьи]({image_url})", parse_mode="Markdown", reply_markup=get_inline_keyboard2())
 
-    image_url = image_response.data[0].url
-    await bot.send_message(chat_id=chat_id, text="Генерация новости: 100%")
-
-    return generate_text, image_url
-
-
-@dp.callback_query(lambda c: c.data == "new_image")
-async def new_image_handler(callback_query: types.CallbackQuery):
-    global generate_text, image_url
-
-    chat_id = callback_query.message.chat.id
-
-    # Проверяем, определен ли текст статьи
-    if not generate_text:
-        await callback_query.message.reply("Ошибка: текст статьи не найден. Пожалуйста, сгенерируйте новость сначала.")
-        return
-
-    await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 20%")
-
-    # Генерация изображения на основе уже сгенерированного текста статьи
-    image_prompt = f"Create an illustration for the following article: {generate_text}"
-    image_response = await openai_client.images.generate(
-        model="dall-e-3",
-        prompt=image_prompt,
-        size="1024x1024",
-        quality="standard",
-        n=1
-        )
-
-    # Сохранение нового URL изображения
-    image_url = image_response.data[0].url
-    await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 100%")
-
-    # Отправка нового изображения пользователю
-    await bot.send_message(chat_id=chat_id, text=f"({generate_text})\n\n[Изображение статьи]({image_url})", parse_mode="Markdown", reply_markup=get_inline_keyboard2())
-
-    return generate_text, image_url
+    return generate_text
 
 
 
@@ -641,22 +585,24 @@ async def generate_news_handler(callback_query: types.CallbackQuery):
 
     # try:
 
-    news, image_url = await generate_news(callback_query)
+    # news, image_url = await generate_news(callback_query)
+    news = await generate_news(callback_query)
 
     # except:
+    #
     #     await bot.send_message(chat_id=chat_id, text="Нужно добавить каналы, чтобы придумать или добавленные каналы больше не существуют", reply_markup=get_inline_keyboard4())
     #     return
 
-    await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}\n\n[Изображение статьи]({image_url})", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
-
+    # await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}\n\n[Изображение статьи]({image_url})", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
+    await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
 
 
 # Обработчик выбора "Сгенерировать заново"
-async def regenerate_news_handler(callback_query: types.CallbackQuery):
-    news, image_url = await generate_news(callback_query)
-
-    if news and image_url:
-        await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}\n\n[Изображение статьи]({image_url})", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
+# async def regenerate_news_handler(callback_query: types.CallbackQuery):
+#     news, image_url = await generate_news(callback_query)
+#
+#     if news and image_url:
+#     await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}\n\n[Изображение статьи]({image_url})", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
 
 
 async def main():
@@ -664,10 +610,9 @@ async def main():
 
     dp.callback_query.register(generate_news_handler, lambda c: c.data == "change")
     dp.callback_query.register(generate_news_handler, lambda c: c.data == "generate")
-    dp.callback_query.register(regenerate_news_handler, lambda c: c.data == "regenerate")
-    # dp.callback_query.register(publish_news_handler, lambda c: c.data == "publish")
+    # dp.callback_query.register(regenerate_news_handler, lambda c: c.data == "regenerate")
     dp.callback_query.register(toggle_prompt_handler, lambda c: c.data == "toggle_prompt")
-    dp.callback_query.register(new_image_handler, lambda c: c.data == "new_image")
+    # dp.callback_query.register(new_image_handler, lambda c: c.data == "new_image")
 
     await dp.start_polling(bot, on_shutdown=shutdown_handler)
 

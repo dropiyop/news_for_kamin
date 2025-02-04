@@ -32,18 +32,41 @@ def init_db():
         )
     """)
 
+
+
     # Таблица для инициализированных клиентов
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS init_clients (
             user_id INTEGER PRIMARY KEY,
+            chat_id TEXT,
             contact_username TEXT,
             contact_name TEXT,
             contact_phone TEXT
         )
     """)
 
+    cursor.execute("PRAGMA table_info(init_clients)")
+    columns = [row[1] for row in cursor.fetchall()]
+
+    # Если `chat_id` отсутствует — добавляем
+    if "chat_id" not in columns:
+        cursor.execute("ALTER TABLE init_clients ADD COLUMN chat_id INTEGER")
+
+    cursor.execute("""
+     CREATE TABLE IF NOT EXISTS chat_history (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL,
+    role TEXT CHECK(role IN ('user', 'assistant')) NOT NULL,
+    content TEXT NOT NULL,
+    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+    """)
+
+
+
     conn.commit()
     conn.close()
 
 # Инициализируем базу данных
 init_db()
+
