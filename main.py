@@ -391,6 +391,7 @@ def slice_text(text, num_words):
     return " ".join(words)  # Соединяем их обратно в строку
 
 
+
 async def gen_titles(callback_query):
     global generate_text, image_url, used_titles, user_prompts
 
@@ -486,11 +487,8 @@ async def gen_titles(callback_query):
     await bot.send_message(chat_id=chat_id, text="Генерация новости: 50%")
 
 
-    # history.append({"role": "user", "content":selected_description})
-    #
-    # editabs.save_chat_history(user_id, history)
 
-    history = editabs.get_chat_history(user_id)
+
 
 
     response = await openai_client.chat.completions.create(
@@ -508,17 +506,14 @@ async def gen_titles(callback_query):
     # Получение текста из ответа
     generate_text = response.choices[0].message.content.strip()
 
-    print(prompt)
-    print (generate_text)
-
-    if not any(entry["content"] == prompt for entry in history if entry["role"] == "user"):
-        history.append({"role": "user", "content": prompt})
-
-    if not any(entry["content"] == generate_text for entry in history if entry["role"] == "assistant"):
-        history.append({"role": "assistant", "content": generate_text})
 
 
-    editabs.save_chat_history(user_id, history)
+    editabs.save_chat_history(user_id, "user", prompt)
+    editabs.save_chat_history(user_id, "assistant", generate_text)
+
+
+
+
 
     # print(prompt)
     await bot.send_message(chat_id=chat_id, text="Генерация новости: 70%")
@@ -624,8 +619,7 @@ async def generate_news(callback_query):
 
 
 
-    history_user = editabs.get_chat_history(user_id)
-    history_gpt = editabs.get_chat_history(user_id)
+
 
 
 
@@ -645,11 +639,7 @@ async def generate_news(callback_query):
     # Получение текста из ответа
     generate_text = response.choices[0].message.content.strip()
 
-    history_user.append({"role": "user", "content": prompt})
-    editabs.save_chat_history(user_id, history_user)
 
-    history_gpt.append({"role": "assistant", "content": generate_text})
-    editabs.save_chat_history(user_id, history_gpt)
 
     # print(prompt)
     await bot.send_message(chat_id=chat_id, text="Генерация новости: 70%")

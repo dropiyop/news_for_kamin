@@ -90,17 +90,17 @@ def get_chat_history(user_id):
     messages = [{"role": row[0], "content": row[1]} for row in cursor.fetchall()]
 
     conn.close()
-    return messages  # ✅ Возвращает список сообщений
+    return user_id  # Возвращает список сообщений
 
-def save_chat_history(user_id, messages):
+def save_chat_history(user_id, role, content):
     """Сохраняет историю сообщений пользователя в базе"""
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.executemany("""
-        INSERT INTO chat_history (user_id, role, content)
+    cursor.execute("""
+        INSERT OR IGNORE INTO chat_history (user_id, role, content)
         VALUES (?, ?, ?)
-    """, [(user_id, msg["role"], msg["content"]) for msg in messages])
+    """, (user_id, role, content))
 
     conn.commit()
     conn.close()
