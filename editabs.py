@@ -79,32 +79,6 @@ def remove_user(user_id):
     print(f"🗑 Пользователь {user_id} удалён из базы данных.")
 
 
-def update_chat_id(user_id, chat_id):
-    """Обновляет chat_id для конкретного пользователя"""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("""
-        UPDATE init_clients
-        SET chat_id = ?
-        WHERE user_id = ?
-    """, (chat_id, user_id))
-
-    conn.commit()
-    conn.close()
-
-    print(f"chat_id {chat_id} обновлён для user_id {user_id}.")
-
-def get_chat_id(user_id):
-    """Получает chat_id сессии OpenAI для пользователя, если он есть"""
-    conn = get_connection()
-    cursor = conn.cursor()
-
-    cursor.execute("SELECT chat_id FROM init_clients WHERE user_id = ?", (user_id,))
-    result = cursor.fetchone()
-
-    conn.close()
-    return result[0] if result else None  #  Если нет chat_id, возвращает None
 
 
 def get_chat_history(user_id):
@@ -112,7 +86,7 @@ def get_chat_history(user_id):
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT role, content FROM chat_history WHERE user_id = ? ORDER BY timestamp ASC", (user_id,))
+    cursor.execute("SELECT role, content FROM chat_history WHERE user_id = ?", (user_id,))
     messages = [{"role": row[0], "content": row[1]} for row in cursor.fetchall()]
 
     conn.close()
@@ -124,9 +98,11 @@ def save_chat_history(user_id, messages):
     cursor = conn.cursor()
 
     cursor.executemany("""
-        INSERT INTO chat_history (user_id, role, content, timestamp)
-        VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+        INSERT INTO chat_history (user_id, role, content)
+        VALUES (?, ?, ?)
     """, [(user_id, msg["role"], msg["content"]) for msg in messages])
 
     conn.commit()
     conn.close()
+
+

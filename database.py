@@ -53,12 +53,15 @@ def init_db():
         cursor.execute("ALTER TABLE init_clients ADD COLUMN chat_id INTEGER")
 
     cursor.execute("""
-     CREATE TABLE IF NOT EXISTS chat_history (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    user_id INTEGER NOT NULL,
-    role TEXT CHECK(role IN ('user', 'assistant')) NOT NULL,
-    content TEXT NOT NULL,
-    timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+        DROP TABLE chat_history
+    """)
+
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS chat_history (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER NOT NULL,
+        role TEXT CHECK(role IN ('user', 'assistant')) NOT NULL,
+        content TEXT NOT NULL
     )
     """)
 
