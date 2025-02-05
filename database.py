@@ -48,7 +48,7 @@ def init_db():
     cursor.execute("PRAGMA table_info(init_clients)")
     columns = [row[1] for row in cursor.fetchall()]
 
-    # Если `chat_id` отсутствует — добавляем
+    # Если `chat_id` отсутствует — добавляе
     if "chat_id" not in columns:
         cursor.execute("ALTER TABLE init_clients ADD COLUMN chat_id INTEGER")
 
