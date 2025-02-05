@@ -52,9 +52,6 @@ def init_db():
     if "chat_id" not in columns:
         cursor.execute("ALTER TABLE init_clients ADD COLUMN chat_id INTEGER")
 
-    cursor.execute("""
-        DROP TABLE chat_history
-    """)
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_history (
