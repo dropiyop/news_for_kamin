@@ -26,7 +26,7 @@ import dotenv
 import httpx
 import httpx_socks
 import editabs
-
+import sys
 
 
 dotenv.load_dotenv()
@@ -390,6 +390,32 @@ def slice_text(text, num_words):
     words = text.split()[:num_words]  # Берем первые `num_words` слов
     return " ".join(words)  # Соединяем их обратно в строку
 
+import re
+
+def escape_markdown_v2(text):
+    """Экранирует специальные символы для MarkdownV2 и форматирует список тем"""
+    escape_chars = r"_*[]()~`>#+-=|{}.!"
+
+    # Если передан список кортежей (id, title, url), форматируем в MarkdownV2
+    if isinstance(text, list):
+        formatted_text = []
+        for topic in text:
+            topic_id, title, url = map(str, topic)
+            if url:
+                formatted_text.append(f" {topic_id}.\n {title}({url})\n")
+            else:
+                formatted_text.append(f" {topic_id}.\n {title}\n")
+
+        text = "".join(formatted_text)
+
+    # Экранируем специальные символы для MarkdownV2
+    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
+
+
+
+async def compress_text(text):
+    max_length = 200
+    return text[:max_length] if len(text) > max_length else text
 
 
 async def gen_titles(callback_query):
@@ -399,8 +425,10 @@ async def gen_titles(callback_query):
     chat_id = callback_query.message.chat.id
     user_id = callback_query.from_user.id
 
+
     # Проверяем, существует ли пользовательский промпт
     if user_id in user_prompts:
+
         # Используем промпт, заданный пользователем
         prompt = (user_prompts[user_id] + "\nОсновные правила для тебя:"
 
@@ -408,11 +436,12 @@ async def gen_titles(callback_query):
                                           "1.Всего в статье должно быть 1500 символов. НИКОГДА НЕ МОЖЕТ БЫТЬ БОЛЬШЕ 1500 СИМВОЛОВ.  2.Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
                                           "3.Структурные наименования писать не нужно не нужно."
                                           "4.Статья должна иметь завершенный вид и быть интересной"
-                                          "Тебе придут новости из новостных каналов за неделю. Выяви самые интеренсые новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
+                                          "Тебе придут новости  из новостных каналов за неделю. Выяви самые интеренсые новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
                                           "Напиши одну IT-статью (Всего в статье должно быть 1500 символов, ИНАЧЕ Я ТЕБЯ УВОЛЮ) на основе заголовков и описаний, которые придут тебе из RSS ленты. Ограничение на количество символов статьи = 1500"
                                           "При каждой генерации используй разные статьи. Если нужно будет сгенерировать повторно, тебе нужно придумать новую статью, основываясь на других заголовках. "
                                           "Всегда рандомно выбирай статьи. Суммаризируй весь текст ровно до 1500 символов.  Не включай ссылки в свои статьи\n\n"
                   )
+
     else:
 
         channels = editabs.get_user_channels(user_id)
@@ -420,6 +449,8 @@ async def gen_titles(callback_query):
         if not channels:  # Если список пуст
 
             return
+
+        selected_description = []
 
         for channel in channels:
             try:
@@ -430,62 +461,42 @@ async def gen_titles(callback_query):
                     return
 
                 else:
-                    post_links = []
-                    all_messages = []
                     seen_messages = set()
                     # Обрабатываем полученные сообщения
                     for msg in messages:
-
                         link = f"{channel}/{msg.id}"
 
+                        msg.message = await compress_text(msg.message)
+
                         if msg.message not in seen_messages:
-                            seen_messages.add(msg.message)  # Добавляем текст в `set`
-                            all_messages.append(f"{msg.message} - {link}")  # Добавляем сообщение + ссылку
-                            post_links.append(link)
+                            seen_messages.add(msg.message)
 
-                    # print("\n".join(post_links))
-                    # print (len(post_links))
+                            selected_description.append({
+                                "message": msg.message,
+                                "link": link
+                                })
+
+                selected_description_json = json.dumps(selected_description, ensure_ascii=False, indent=4)
 
 
-                    selected_description = "\n\n".join(all_messages)
-
+                # try:
+                #     print("Завершаем программу...")
+                #     sys.exit(0)
+                # except SystemExit:
+                #     pass
 
 
             except Exception as e:
                 await bot.send_message(chat_id, f"Ошибка при парсинге", reply_markup=get_inline_keyboard3())
                 return
 
-        # new_titles = [
-        #     (msg.date)
-        #     for msg in messages
-        #
-        #     if str(msg.date) not in used_titles  # Проверяем, использовался ли заголовок (дата)
-        #     ]
-        #
-        #
-        #
-        # if not new_titles:
-        #     await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="Нет новых статей для генерации.")
-        #     return None
 
         await bot.send_message(chat_id=chat_id, text="Генерация новости: 20%")
 
 
-        prompt = (
 
-           "\nОсновные правила для тебя:"   
 
-              "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
-                "Выяви из новостей, которые тебе придут, темы и в ответе пришли только темы"
-                "К каждой новости прикреплены ссылки на них, когда выявишь 5 тем, обязательно прикрепи к каждой теме ссылку из какого канала ты взял тему для новости"
-                "ДЛЯ ОДНОЙ ССЫЛКИ ОДНА ТЕМА"
-                "Пришли в ответе 5 тем."
-
-        )
-        prompt += f"Description: {selected_description}\n\n"
-
-    await bot.send_message(chat_id=chat_id, text="Генерация новости: 50%")
-
+        await bot.send_message(chat_id=chat_id, text="Генерация новости: 50%")
 
 
 
@@ -494,22 +505,72 @@ async def gen_titles(callback_query):
     response = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
-            {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен выявить темы  из всех новостей на основе предложенных  description. Пришли в ответе 5 тем."},
-            {"role": "user", "content": prompt}
+            {"role": "system", "content":
+                                        "\nОсновные правила для тебя:"
+                                        "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
+                                        "Выяви из новостей, которые тебе придут, темы и в ответе пришли только темы"
+                                        "Тебе придут новости в формате json '{message: text_news, link: url_news}'"
+                                        "Пришли в ответе 5 тем.Отвечай по json_schema. Ссылки которые нужно прикрепить начинаются на https://t.me/"
+                                        "К каждой новости прикреплены ссылки на них, когда выявишь 5 тем, обязательно прикрепи к каждой теме ссылку из какого канала ты взял тему для новости"
+                                        "ДЛЯ ОДНОЙ ССЫЛКИ ОДНА ТЕМА"
+                                        "Пришли в ответе 5 тем."
+                                            
+                                        "У тебя есть группа в социальной сети и ты должен выявить темы  из всех новостей на основе предложенных  description."
+                                        "НИКОГДА не добавляй в темы новости которые могут содержать рекламу. Как правило, они помечены словом 'Реклама' "
+                                        "Тебе придут новости из новостных каналов за неделю. Выяви самые интересные новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
+                                        "Различай названия каналов из ссылок ПРИМЕР: 'https://t.me/namechannel' "
+                                        "Если новости из разных каналов ('https://t.me/ai_machinelearning_big_data', 'https://t.me/cmd_it' и так далее) ты обязан выявить темы для новостей из всего списка новостей"
+                                        "Негативный пример: ты получил новости из тг каналов и выявил темы только на основе одного канала. ОЧЕНЬ плохо"
+                                        "Позитивный пример: ты получил новости из тг каналов и выявил темы на основе новостей со всех каналов. ОТЛИЧНО"
+
+             },
+            {"role": "user", "content": f"Description: {selected_description_json}\n\n"}
             ],
-        max_tokens=1000,
+
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "titles",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "topics": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "integer"},
+                                    "title": {"type": "string"},
+                                    "url": {"type": "string"}
+                                    },
+                                "required": ["id", "title", "url"],
+                                "additionalProperties": False
+                                }
+                            }
+                        },
+                    "required": ["topics"],
+                    "additionalProperties": False
+                    },
+                "strict": True
+                }
+            },
         temperature=0.4
         )
 
+    print (selected_description_json)
+    # print (len(selected_description_json))
 
+    response_json = json.loads(response.choices[0].message.content)
 
     # Получение текста из ответа
-    generate_text = response.choices[0].message.content.strip()
+    generate_text = [(topic["id"], topic["title"], topic.get("url", "")) for topic in response_json.get("topics", [])]
 
 
+    print (generate_text)
 
-    editabs.save_chat_history(user_id, "user", prompt)
-    editabs.save_chat_history(user_id, "assistant", generate_text)
+
+    # editabs.save_chat_history(user_id, "user", prompt)
+    # editabs.save_chat_history(user_id, "assistant", generate_text)
 
 
 
@@ -521,10 +582,13 @@ async def gen_titles(callback_query):
 
 
 
+
+
     return generate_text
 
 
 
+#######################################################################################################
 async def generate_news(callback_query):
     global generate_text, user_prompts
 
@@ -617,13 +681,6 @@ async def generate_news(callback_query):
 
 
 
-
-
-
-
-
-
-
     response = await openai_client.chat.completions.create(
         model="gpt-4o-mini",
         messages=[
@@ -631,7 +688,7 @@ async def generate_news(callback_query):
             {"role": "user", "content": prompt}
             ],
         max_tokens=1000,
-        temperature=0.7
+        temperature=0.7,
         )
 
 
@@ -697,10 +754,6 @@ async def generate_news(callback_query):
 
 
 
-
-
-
-
 async def send_telegram_message(chat_id, text, reply_markup=None, bot=None):
     # Используем асинхронный метод для отправки сообщения в Telegram
     await bot.send_message(chat_id=chat_id, text=text, reply_markup=reply_markup)
@@ -716,10 +769,6 @@ async def send_welcome(message: types.Message):
     await message.reply("Готов для генерации новостей!", reply_markup=get_inline_keyboard())
 
 
-def escape_markdown_v2(text):
-    """Экранирует специальные символы для MarkdownV2"""
-    escape_chars = r"_*[]()~`>#+-=|{}.!"
-    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
 # Обработчик выбора /generate
 async def generate_news_handler(callback_query: types.CallbackQuery):
@@ -738,7 +787,7 @@ async def generate_news_handler(callback_query: types.CallbackQuery):
     news = escape_markdown_v2(news)
 
     # await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}\n\n[Изображение статьи]({image_url})", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
-    await bot.send_message(chat_id, text=f"{news}",parse_mode="MarkdownV2",  reply_markup=get_inline_keyboard2())
+    await bot.send_message(chat_id, text=f"{news}",parse_mode="MarkdownV2",  reply_markup=get_inline_keyboard2(), disable_web_page_preview=True)
 
 
 # Обработчик выбора "Сгенерировать заново"
