@@ -22,7 +22,7 @@ client = TelegramClient(phone, api_id, api_hash)
 
 async def fetch_messages_by_date(chat_id):
     end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=7)
+    start_date = end_date - timedelta(days=1)
 
     messages = []
     offset_id = 0  # Начинаем с последнего сообщения

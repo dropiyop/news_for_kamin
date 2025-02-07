@@ -414,7 +414,7 @@ def escape_markdown_v2(text):
 
 
 async def compress_text(text):
-    max_length = 200
+    max_length = 1000
     return text[:max_length] if len(text) > max_length else text
 
 
@@ -557,6 +557,7 @@ async def gen_titles(callback_query):
         temperature=0.4
         )
 
+    print (len(selected_description_json))
     print (selected_description_json)
     # print (len(selected_description_json))
 
