@@ -451,165 +451,7 @@ async def compress_text(text):
 
 
 #######################################################################################################
-async def generate_news(callback_query):
-    global generate_text, user_prompts
 
-    message_id = callback_query.message.message_id
-    chat_id = callback_query.message.chat.id
-    user_id = callback_query.from_user.id
-
-    # Проверяем, существует ли пользовательский промпт
-    if user_id in user_prompts:
-        # Используем промпт, заданный пользователем
-        prompt = (user_prompts[user_id] + "\nОсновные правила для тебя:"
-                                          
-                                            "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
-                                            "1.Всего в статье должно быть 1500 символов. НИКОГДА НЕ МОЖЕТ БЫТЬ БОЛЬШЕ 1500 СИМВОЛОВ.  2.Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
-                                            "3.Структурные наименования писать не нужно не нужно."
-                                            "4.Статья должна иметь завершенный вид и быть интересной"
-                                            "Тебе придут новости из новостных каналов за неделю. Выяви самые интеренсые новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
-                                            "Напиши одну IT-статью (Всего в статье должно быть 1500 символов, ИНАЧЕ Я ТЕБЯ УВОЛЮ) на основе заголовков и описаний, которые придут тебе из RSS ленты. Ограничение на количество символов статьи = 1500"
-                                            "При каждой генерации используй разные статьи. Если нужно будет сгенерировать повторно, тебе нужно придумать новую статью, основываясь на других заголовках. "
-                                            "Всегда рандомно выбирай статьи. Суммаризируй весь текст ровно до 1500 символов.  Не включай ссылки в свои статьи\n\n"
-                                                  )
-    else:
-
-
-
-        channels = editabs.get_user_channels(user_id)
-
-        if not channels:  # Если список пуст
-
-            return
-
-        for channel in channels:
-            try:
-                messages = await tg_parse.parse(channel)
-
-                if isinstance(messages, str):
-                    await bot.send_message(chat_id, messages, reply_markup=get_inline_keyboard4())  # Отправляем пользователю сообщение об ошибке
-                    return
-
-                else:
-
-                    all_messages = []
-                    # Обрабатываем полученные сообщения
-                    for msg in messages:
-                        # print(msg.message)
-                        all_messages.append(msg.message)
-
-                    selected_description = "\n".join(all_messages)
-
-
-            except Exception as e:
-                await bot.send_message(chat_id, f"Ошибка при парсинге", reply_markup=get_inline_keyboard3())
-                return
-
-
-
-        # new_titles = [
-        #     (msg.date)
-        #     for msg in messages
-        #
-        #     if str(msg.date) not in used_titles  # Проверяем, использовался ли заголовок (дата)
-        #     ]
-        #
-        #
-        #
-        # if not new_titles:
-        #     await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="Нет новых статей для генерации.")
-        #     return None
-
-        await bot.send_message(chat_id=chat_id, text="Генерация новости: 20%")
-
-
-
-        prompt = (
-            "\nОсновные правила для тебя:"
-            
-            "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
-            "1.Всего в статье должно быть 1500 символов. НИКОГДА НЕ МОЖЕТ БЫТЬ БОЛЬШЕ 1500 СИМВОЛОВ.  2.Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
-            "3.Структурные наименования писать не нужно не нужно."
-            "4.Статья должна иметь завершенный вид и быть интересной"
-            "Тебе придут новости из новостных каналов за неделю. Выяви самые интеренсые новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
-            "Напиши одну IT-статью (Всего в статье должно быть 1500 символов, ИНАЧЕ Я ТЕБЯ УВОЛЮ) на основе заголовков и описаний, которые придут тебе из RSS ленты. Ограничение на количество символов статьи = 1500"
-            "При каждой генерации используй разные статьи. Если нужно будет сгенерировать повторно, тебе нужно придумать новую статью, основываясь на других заголовках. "
-            "Всегда рандомно выбирай статьи. Суммаризируй весь текст ровно до 1500 символов.  Не включай ссылки в свои статьи\n\n"
-
-        )
-        prompt += f"Description: {selected_description}\n\n"
-
-    await bot.send_message(chat_id=chat_id, text="Генерация новости: 50%")
-
-
-
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных  description. Ограничение на количество символов в статье строго 1500"},
-            {"role": "user", "content": prompt}
-            ],
-        max_tokens=1000,
-        temperature=0.7,
-        )
-
-
-
-    # Получение текста из ответа
-    generate_text = response.choices[0].message.content.strip()
-
-
-
-    # print(prompt)
-    await bot.send_message(chat_id=chat_id, text="Генерация новости: 70%")
-
-#     # Генерация изображения на основе текста статьи
-#     image_prompt = f"Create an illustration for the following article: {generate_text}"
-#     image_response = await openai_client.images.generate(
-#         model="dall-e-3",
-#         prompt=image_prompt,
-#         size="1024x1024",
-#         quality="standard",
-#         n=1
-#         )
-#
-#     image_url = image_response.data[0].url
-#     await bot.send_message(chat_id=chat_id, text="Генерация новости: 100%")
-#
-#     return generate_text, image_url
-#
-#
-# @dp.callback_query(lambda c: c.data == "new_image")
-# async def new_image_handler(callback_query: types.CallbackQuery):
-#     global generate_text, image_url
-#
-#     chat_id = callback_query.message.chat.id
-#
-#     # Проверяем, определен ли текст статьи
-#     if not generate_text:
-#         await callback_query.message.reply("Ошибка: текст статьи не найден. Пожалуйста, сгенерируйте новость сначала.")
-#         return
-#
-#     await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 20%")
-#
-#     # Генерация изображения на основе уже сгенерированного текста статьи
-#     image_prompt = f"Create an illustration for the following article: {generate_text}"
-#     image_response = await openai_client.images.generate(
-#         model="dall-e-3",
-#         prompt=image_prompt,
-#         size="1024x1024",
-#         quality="standard",
-#         n=1
-#         )
-#
-#     # Сохранение нового URL изображения
-#     image_url = image_response.data[0].url
-#     await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 100%")
-#
-#     # Отправка нового изображения пользователю
-#     await bot.send_message(chat_id=chat_id, text=f"({generate_text})\n\n[Изображение статьи]({image_url})", parse_mode="Markdown", reply_markup=get_inline_keyboard2())
-
-    return generate_text
 
 
 
@@ -746,7 +588,6 @@ async def gen_titles(callback_query):
 
         response_json = json.loads(response.choices[0].message.content)
 
-        print (response_json)
 
 
         for topic in response_json.get("topics", []):
@@ -811,26 +652,168 @@ async def top_titles(callback_query):
 
     response_json = json.loads(response.choices[0].message.content)
 
-    print (response_json)
+    topics_with_descriptions = json.dumps([
+        {
+            "id": topic.get("id"),
+            "title": topic.get("title"),
+            "url": topic.get("url"),
+            "description": editabs.get_description_by_url(topic.get("url", "")) or "Описание не найдено"
+            }
+        for topic in response_json.get("topics", [])
+        ], ensure_ascii=False, indent=4)
 
-    topics_with_descriptions = []
+    await  generate_news(callback_query, topics_with_descriptions)
 
-    for topic in response_json.get("topics", []):
-        url = topic.get("url", "")
-        description = editabs.get_description_by_url(url)  #  Ищем описание по `url`
+    print  (topics_with_descriptions)
 
-        topics_with_descriptions.append({
-            "id": topic["id"],
-            "title": topic["title"],
-            "url": url,
-            "description": description if description else "Описание не найдено"
-            })
+async def generate_news(callback_query, topics_with_descriptions):
+    global generate_text, user_prompts
 
-    titles = [{"id": topic["id"], "title": topic["title"], "url": topic["url"]} for topic in topics_with_descriptions]
+    message_id = callback_query.message.message_id
+    chat_id = callback_query.message.chat.id
+    user_id = callback_query.from_user.id
+
+    # Проверяем, существует ли пользовательский промпт
+    if user_id in user_prompts:
+        # Используем промпт, заданный пользователем
+        prompt = (user_prompts[user_id] + "\nОсновные правила для тебя:"
+
+                                          "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
+                                          "1.Всего в статье должно быть 1500 символов. НИКОГДА НЕ МОЖЕТ БЫТЬ БОЛЬШЕ 1500 СИМВОЛОВ.  2.Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
+                                          "3.Структурные наименования писать не нужно не нужно."
+                                          "4.Статья должна иметь завершенный вид и быть интересной"
+                                          "Тебе придут новости из новостных каналов за неделю. Выяви самые интеренсые новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
+                                          "Напиши одну IT-статью (Всего в статье должно быть 1500 символов, ИНАЧЕ Я ТЕБЯ УВОЛЮ) на основе заголовков и описаний, которые придут тебе из RSS ленты. Ограничение на количество символов статьи = 1500"
+                                          "При каждой генерации используй разные статьи. Если нужно будет сгенерировать повторно, тебе нужно придумать новую статью, основываясь на других заголовках. "
+                                          "Всегда рандомно выбирай статьи. Суммаризируй весь текст ровно до 1500 символов.  Не включай ссылки в свои статьи\n\n"
+                  )
+    else:
+
+        channels = editabs.get_user_channels(user_id)
+
+        if not channels:  # Если список пуст
+
+            return
+
+        for channel in channels:
+            try:
+                messages = await tg_parse.parse(channel)
+
+                if isinstance(messages, str):
+                    await bot.send_message(chat_id, messages, reply_markup=get_inline_keyboard4())  # Отправляем пользователю сообщение об ошибке
+                    return
+
+                else:
+
+                    all_messages = []
+                    # Обрабатываем полученные сообщения
+                    for msg in messages:
+                        # print(msg.message)
+                        all_messages.append(msg.message)
+
+                    selected_description = "\n".join(all_messages)
 
 
-    return titles
+            except Exception as e:
+                await bot.send_message(chat_id, f"Ошибка при парсинге", reply_markup=get_inline_keyboard3())
+                return
 
+        # new_titles = [
+        #     (msg.date)
+        #     for msg in messages
+        #
+        #     if str(msg.date) not in used_titles  # Проверяем, использовался ли заголовок (дата)
+        #     ]
+        #
+        #
+        #
+        # if not new_titles:
+        #     await bot.edit_message_text(chat_id=chat_id, message_id=message_id, text="Нет новых статей для генерации.")
+        #     return None
+
+        await bot.send_message(chat_id=chat_id, text="Генерация новости: 20%")
+
+        prompt = (
+            "\nОсновные правила для тебя:"
+
+            "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
+            "1.Всего в статье должно быть 1500 символов. НИКОГДА НЕ МОЖЕТ БЫТЬ БОЛЬШЕ 1500 СИМВОЛОВ.  2.Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
+            "3.Структурные наименования писать не нужно не нужно."
+            "4.Статья должна иметь завершенный вид и быть интересной"
+            "Тебе придет json {'id': 'title': 'url': 'description':}"
+            "новости из новостных каналов за неделю. Выяви самые интеренсые новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
+            "Напиши одну IT-статью (Всего в статье должно быть 1500 символов, ИНАЧЕ Я ТЕБЯ УВОЛЮ) на основе заголовков и описаний, которые придут тебе из RSS ленты. Ограничение на количество символов статьи = 1500"
+            "При каждой генерации используй разные статьи. Если нужно будет сгенерировать повторно, тебе нужно придумать новую статью, основываясь на других заголовках. "
+            "Всегда рандомно выбирай статьи. Суммаризируй весь текст ровно до 1500 символов.  Не включай ссылки в свои статьи\n\n"
+
+        )
+        prompt += f"Description: {topics_with_descriptions}\n\n"
+
+    await bot.send_message(chat_id=chat_id, text="Генерация новости: 50%")
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных  description. Ограничение на количество символов в статье строго 1500"},
+            {"role": "user", "content": prompt}
+            ],
+
+        temperature=0.7,
+        )
+
+    # Получение текста из ответа
+    generate_text = response.choices[0].message.content.strip()
+
+    # print(prompt)
+    await bot.send_message(chat_id=chat_id, text="Генерация новости: 70%")
+
+    #     # Генерация изображения на основе текста статьи
+    #     image_prompt = f"Create an illustration for the following article: {generate_text}"
+    #     image_response = await openai_client.images.generate(
+    #         model="dall-e-3",
+    #         prompt=image_prompt,
+    #         size="1024x1024",
+    #         quality="standard",
+    #         n=1
+    #         )
+    #
+    #     image_url = image_response.data[0].url
+    #     await bot.send_message(chat_id=chat_id, text="Генерация новости: 100%")
+    #
+    #     return generate_text, image_url
+    #
+    #
+    # @dp.callback_query(lambda c: c.data == "new_image")
+    # async def new_image_handler(callback_query: types.CallbackQuery):
+    #     global generate_text, image_url
+    #
+    #     chat_id = callback_query.message.chat.id
+    #
+    #     # Проверяем, определен ли текст статьи
+    #     if not generate_text:
+    #         await callback_query.message.reply("Ошибка: текст статьи не найден. Пожалуйста, сгенерируйте новость сначала.")
+    #         return
+    #
+    #     await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 20%")
+    #
+    #     # Генерация изображения на основе уже сгенерированного текста статьи
+    #     image_prompt = f"Create an illustration for the following article: {generate_text}"
+    #     image_response = await openai_client.images.generate(
+    #         model="dall-e-3",
+    #         prompt=image_prompt,
+    #         size="1024x1024",
+    #         quality="standard",
+    #         n=1
+    #         )
+    #
+    #     # Сохранение нового URL изображения
+    #     image_url = image_response.data[0].url
+    #     await bot.send_message(chat_id=chat_id, text="Генерация новой картинки: 100%")
+    #
+    #     # Отправка нового изображения пользователю
+    #     await bot.send_message(chat_id=chat_id, text=f"({generate_text})\n\n[Изображение статьи]({image_url})", parse_mode="Markdown", reply_markup=get_inline_keyboard2())
+
+    return generate_text
 
 
     # Обработчик выбора /generate
