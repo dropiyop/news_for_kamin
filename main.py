@@ -673,7 +673,7 @@ async def generate_news(callback_query, topics_with_descriptions):
     chat_id = callback_query.message.chat.id
     user_id = callback_query.from_user.id
 
-    # Проверяем, существует ли пользовательский промпт
+    # Проверяем, существует ли пользовательский промп
     if user_id in user_prompts:
         # Используем промпт, заданный пользователем
         prompt = (user_prompts[user_id] + "\nОсновные правила для тебя:"
