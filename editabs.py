@@ -1,3 +1,5 @@
+from pyexpat.errors import messages
+
 from database import  get_connection
 
 
@@ -81,28 +83,79 @@ def remove_user(user_id):
 
 
 
-def get_chat_history(user_id):
+def get_chat_history(user_id, role = None, title = None):
     """Получает историю сообщений пользователя из базы данных"""
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT role, content FROM chat_history WHERE user_id = ?", (user_id,))
-    messages = [{"role": row[0], "content": row[1]} for row in cursor.fetchall()]
+    if role:
+        cursor.execute("""
+                SELECT role, topic_id, title, description, url 
+                FROM chat_history 
+                WHERE user_id = ? AND role = ? 
+                ORDER BY id ASC
+            """, (user_id, role))
+    else:
+        cursor.execute("""
+                SELECT role, topic_id, title, description, url 
+                FROM chat_history 
+                WHERE user_id = ? 
+                ORDER BY id ASC
+            """, (user_id,))
+    if title:
+        titles = [
+            {
+            "title": row[2],
+            "url": row[4]
+            } for row in cursor.fetchall() if row[0] is not None]
+        conn.close()
+        return titles
 
-    conn.close()
-    return user_id  # Возвращает список сообщений
+    else:
+        # Преобразуем результат в список словарей
+        messages = [
+            {
+                "role": row[0],
+                "topic_id": row[1],
+                "title": row[2],
+                "description": row[3],
+                "url": row[4]
+                } for row in cursor.fetchall()
+            ]
 
-def save_chat_history(user_id, role, content):
+        conn.close()
+        return messages # Возвращает список сообщений
+
+def save_chat_history(user_id, role, topic_id, title, description, url):
     """Сохраняет историю сообщений пользователя в базе"""
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute("""
-        INSERT OR IGNORE INTO chat_history (user_id, role, content)
-        VALUES (?, ?, ?)
-    """, (user_id, role, content))
+        INSERT OR IGNORE INTO chat_history (user_id, role, topic_id, title, description, url)
+        VALUES (?, ?, ?, ?, ?, ?)
+    """, (user_id, role, topic_id, title, description, url))
 
     conn.commit()
     conn.close()
 
+
+def get_description_by_url(url):
+    """Ищет `description` в `chat_history` по `url`."""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("""
+        SELECT description FROM chat_history WHERE url = ? LIMIT 1
+    """, (url,))
+
+    result = cursor.fetchone()
+    conn.close()
+
+    return result[0] if result else None
+
+
+# ff = get_chat_history(user_id='357981474', role = "assistant", title=1)
+# print (ff)
+#
 

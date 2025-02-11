@@ -28,6 +28,7 @@ import httpx_socks
 import editabs
 import sys
 
+from tg_parse import parse
 
 dotenv.load_dotenv()
 
@@ -187,13 +188,34 @@ def get_inline_keyboard4():
     ])
     return keyboard
 
+def back_or_titles():
+
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="Назад", callback_data="back")],
+        [InlineKeyboardButton(text="Надо бы каналы спарсить", callback_data="generate_titles")]
+        ])
+
+    return keyboard
+
 def back():
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Назад", callback_data="back")]
+
         ])
 
     return keyboard
+
+
+
+
+@dp.callback_query(lambda c: c.data == "generate_titles")
+async def generate_titles(callback: types.CallbackQuery):
+
+    await callback.message.edit_text("Я сделаю это и напишу как закончу",parse_mode="Markdown", reply_markup=get_inline_keyboard3())
+    await gen_titles(callback)  #
+
+
 
 
 @dp.callback_query(lambda c: c.data == "add_channel")
@@ -205,6 +227,7 @@ async def add_channel_request(callback: types.CallbackQuery):
 
 @dp.message(lambda message: message.text.startswith("https://t.me/"))
 async def add_channel(message: types.Message):
+
     user_id = message.from_user.id
     raw_text = message.text.strip()
 
@@ -228,13 +251,18 @@ async def add_channel(message: types.Message):
     for channel in new_channels:
         editabs.add_user_channel(user_id, channel)
 
-
     # Формируем ответ
     response = "Добавлены каналы:\n" + "\n".join(f" {ch}" for ch in new_channels) if new_channels else ""
+
+
     if existing_channels:
         response += "\n!!! Эти каналы уже были в списке:\n" + "\n".join(f" {ch}" for ch in existing_channels)
 
-    await message.reply(response or " Нет новых каналов для добавления.", reply_markup=back(), disable_web_page_preview=True)
+    await message.reply(response or " Нет новых каналов для добавления.", reply_markup=back_or_titles(), disable_web_page_preview=True)
+
+
+
+
 
 
 def escape_markdown(text: str) -> str:
@@ -390,7 +418,6 @@ def slice_text(text, num_words):
     words = text.split()[:num_words]  # Берем первые `num_words` слов
     return " ".join(words)  # Соединяем их обратно в строку
 
-import re
 
 def escape_markdown_v2(text):
     """Экранирует специальные символы для MarkdownV2 и форматирует список тем"""
@@ -400,7 +427,9 @@ def escape_markdown_v2(text):
     if isinstance(text, list):
         formatted_text = []
         for topic in text:
-            topic_id, title, url = map(str, topic)
+            topic_id = str(topic.get("id", ""))
+            title = topic.get("title", "")
+            url = topic.get("url", "")
             if url:
                 formatted_text.append(f" {topic_id}.\n {title}({url})\n")
             else:
@@ -418,174 +447,6 @@ async def compress_text(text):
     return text[:max_length] if len(text) > max_length else text
 
 
-async def gen_titles(callback_query):
-    global generate_text, image_url, used_titles, user_prompts
-
-    message_id = callback_query.message.message_id
-    chat_id = callback_query.message.chat.id
-    user_id = callback_query.from_user.id
-
-
-    # Проверяем, существует ли пользовательский промпт
-    if user_id in user_prompts:
-
-        # Используем промпт, заданный пользователем
-        prompt = (user_prompts[user_id] + "\nОсновные правила для тебя:"
-
-                                          "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
-                                          "1.Всего в статье должно быть 1500 символов. НИКОГДА НЕ МОЖЕТ БЫТЬ БОЛЬШЕ 1500 СИМВОЛОВ.  2.Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
-                                          "3.Структурные наименования писать не нужно не нужно."
-                                          "4.Статья должна иметь завершенный вид и быть интересной"
-                                          "Тебе придут новости  из новостных каналов за неделю. Выяви самые интеренсые новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
-                                          "Напиши одну IT-статью (Всего в статье должно быть 1500 символов, ИНАЧЕ Я ТЕБЯ УВОЛЮ) на основе заголовков и описаний, которые придут тебе из RSS ленты. Ограничение на количество символов статьи = 1500"
-                                          "При каждой генерации используй разные статьи. Если нужно будет сгенерировать повторно, тебе нужно придумать новую статью, основываясь на других заголовках. "
-                                          "Всегда рандомно выбирай статьи. Суммаризируй весь текст ровно до 1500 символов.  Не включай ссылки в свои статьи\n\n"
-                  )
-
-    else:
-
-        channels = editabs.get_user_channels(user_id)
-
-        if not channels:  # Если список пуст
-
-            return
-
-        selected_description = []
-
-        for channel in channels:
-            try:
-                messages = await tg_parse.parse(channel)
-
-                if isinstance(messages, str):
-                    await bot.send_message(chat_id, messages, reply_markup=get_inline_keyboard4())  # Отправляем пользователю сообщение об ошибке
-                    return
-
-                else:
-                    seen_messages = set()
-                    # Обрабатываем полученные сообщения
-                    for msg in messages:
-                        link = f"{channel}/{msg.id}"
-
-                        msg.message = await compress_text(msg.message)
-
-                        if msg.message not in seen_messages:
-                            seen_messages.add(msg.message)
-
-                            selected_description.append({
-                                "message": msg.message,
-                                "link": link
-                                })
-
-                selected_description_json = json.dumps(selected_description, ensure_ascii=False, indent=4)
-
-
-                # try:
-                #     print("Завершаем программу...")
-                #     sys.exit(0)
-                # except SystemExit:
-                #     pass
-
-
-            except Exception as e:
-                await bot.send_message(chat_id, f"Ошибка при парсинге", reply_markup=get_inline_keyboard3())
-                return
-
-
-        await bot.send_message(chat_id=chat_id, text="Генерация новости: 20%")
-
-
-
-
-        await bot.send_message(chat_id=chat_id, text="Генерация новости: 50%")
-
-
-
-
-
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content":
-                                        "\nОсновные правила для тебя:"
-                                        "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
-                                        "Выяви из новостей, которые тебе придут, темы и в ответе пришли только темы"
-                                        "Тебе придут новости в формате json '{message: text_news, link: url_news}'"
-                                        "Пришли в ответе 5 тем.Отвечай по json_schema. Ссылки которые нужно прикрепить начинаются на https://t.me/"
-                                        "К каждой новости прикреплены ссылки на них, когда выявишь 5 тем, обязательно прикрепи к каждой теме ссылку из какого канала ты взял тему для новости"
-                                        "ДЛЯ ОДНОЙ ССЫЛКИ ОДНА ТЕМА"
-                                        "Пришли в ответе 5 тем."
-                                            
-                                        "У тебя есть группа в социальной сети и ты должен выявить темы  из всех новостей на основе предложенных  description."
-                                        "НИКОГДА не добавляй в темы новости которые могут содержать рекламу. Как правило, они помечены словом 'Реклама' "
-                                        "Тебе придут новости из новостных каналов за неделю. Выяви самые интересные новости об IT-индстурии, сфокусируйся на новостях об искусственном интеллекте"
-                                        "Различай названия каналов из ссылок ПРИМЕР: 'https://t.me/namechannel' "
-                                        "Если новости из разных каналов ('https://t.me/ai_machinelearning_big_data', 'https://t.me/cmd_it' и так далее) ты обязан выявить темы для новостей из всего списка новостей"
-                                        "Негативный пример: ты получил новости из тг каналов и выявил темы только на основе одного канала. ОЧЕНЬ плохо"
-                                        "Позитивный пример: ты получил новости из тг каналов и выявил темы на основе новостей со всех каналов. ОТЛИЧНО"
-
-             },
-            {"role": "user", "content": f"Description: {selected_description_json}\n\n"}
-            ],
-
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "titles",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "topics": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {"type": "integer"},
-                                    "title": {"type": "string"},
-                                    "url": {"type": "string"}
-                                    },
-                                "required": ["id", "title", "url"],
-                                "additionalProperties": False
-                                }
-                            }
-                        },
-                    "required": ["topics"],
-                    "additionalProperties": False
-                    },
-                "strict": True
-                }
-            },
-        temperature=0.4
-        )
-
-    print (len(selected_description_json))
-    print (selected_description_json)
-    # print (len(selected_description_json))
-
-    response_json = json.loads(response.choices[0].message.content)
-
-    # Получение текста из ответа
-    generate_text = [(topic["id"], topic["title"], topic.get("url", "")) for topic in response_json.get("topics", [])]
-
-
-    print (generate_text)
-
-
-    # editabs.save_chat_history(user_id, "user", prompt)
-    # editabs.save_chat_history(user_id, "assistant", generate_text)
-
-
-
-
-
-    # print(prompt)
-    await bot.send_message(chat_id=chat_id, text="Генерация новости: 70%")
-
-
-
-
-
-
-    return generate_text
 
 
 
@@ -769,23 +630,225 @@ async def send_long_message(chat_id, text, bot, reply_markup=None):
 async def send_welcome(message: types.Message):
     await message.reply("Готов для генерации новостей!", reply_markup=get_inline_keyboard())
 
-
-
-# Обработчик выбора /generate
-async def generate_news_handler(callback_query: types.CallbackQuery):
+async def gen_titles(callback_query):
+    global generate_text, image_url, used_titles
 
     chat_id = callback_query.message.chat.id
+    user_id = callback_query.from_user.id
 
-    # try:
+    channels = editabs.get_user_channels(user_id)
+
+    if not channels:  # Если список пуст
+
+        return
+
+    for channel in channels:
+        try:
+            messages = await tg_parse.parse(channel, days=1)
+
+            if isinstance(messages, str):
+                await bot.send_message(chat_id, messages, reply_markup=get_inline_keyboard4())  # Отправляем пользователю сообщение об ошибке
+                return
+            else:
+                seen_messages = set()
+                selected_description = []
+
+                for msg in messages:
+                    if not msg.message.strip():
+                        continue
+
+                    link = f"{channel}/{msg.id}"
+                    msg.message = await compress_text(msg.message)
+                    if msg.message not in seen_messages:
+                        seen_messages.add(msg.message)
+                        selected_description.append({
+                            "message": msg.message,
+                            "link": link
+                            })
+
+            selected_description_json = json.dumps(selected_description, ensure_ascii=False, indent=4)
+
+                # try:
+                #     print("Завершаем программу...")
+                #     sys.exit(0)
+                # except SystemExit:
+                #     pass
+
+        except Exception as e:
+            await bot.send_message(chat_id, f"Ошибка при парсинге", reply_markup=get_inline_keyboard3())
+
+            continue
+
+
+        history = editabs.get_chat_history(user_id, role = "assistant",title=1)
+
+
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content":
+                                            "\nОсновные правила для тебя:"
+                                            "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
+                                            "Выяви из новостей, которые тебе придут, темы и в ответе пришли только темы"
+                                            "Тебе придут новости в формате json '{message: text_news, link: url_news}' и накопленная история в json '{role: assistant, title: предыдущие темы}'"
+                                            "Сравнивай каждую новую тему с предыдущей (из истории), если совпадают, то все равно присылай. Если тем в истории еще нет, "
+                                            "то придумывай темы на основе новостей."
+                                            "Пришли в ответе 5 тем.Отвечай по json_schema. Ссылки которые нужно прикрепить начинаются на https://t.me/"
+                                            "К каждой новости прикреплены ссылки на них, когда выявишь 5 тем, обязательно прикрепи к каждой теме ссылку из какого канала ты взял тему для новости"
+                                            "ДЛЯ ОДНОЙ ССЫЛКИ ОДНА ТЕМА"
+                                            "Пришли в ответе 5 тем."
+                                            "К каждой теме обязательно прикрепи текст новости"
+                                            "Ты игнорируешь короткие посты, в которых мало текста, скорее всего это реклама или юмор. НЕ ДОБАВЛЯЕШЬ В ТЕМЫ"
+                                            "Твой фокус внимания направлен только на научные и информативные статьи"
+                                            "НИКОГДА не добавляй в темы новости которые могут содержать рекламу. Как правило, они помечены словом 'Реклама' "
+                                            "Тебе придут новости из новостных каналов за неделю. Выяви самые интересные новости об IT-индустрии, тебе нужны новости только об искусственном интеллекте"
+                                            "Различай названия каналов из ссылок ПРИМЕР: 'https://t.me/namechannel'"
+                                            "НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ"
+
+
+                 },
+                {"role": "user", "content": f"Description: {selected_description_json}, {history} \n\n Ты игнорируешь короткие посты,"
+                                            " в которых мало текста, скорее всего это реклама или юмор НЕ ДОБАВЛЯЕШЬ В ТЕМЫ"
+                                            "Твой фокус внимания направлен только на научные и информативные статьи" "К каждой теме обязательно прикрепи текст новости"
+                                            "НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ"}
+                ],
+
+            response_format={
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "titles",
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "topics": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "id": {"type": "integer"},
+                                        "title": {"type": "string"},
+                                        "description":{"type":"string"},
+                                        "url": {"type": "string"}
+                                        },
+                                    "required": ["id", "title","description", "url"],
+                                    "additionalProperties": False
+                                    }
+                                }
+                            },
+                        "required": ["topics"],
+                        "additionalProperties": False
+                        },
+                    "strict": True
+                    }
+                },
+            temperature=0.4
+            )
+
+        response_json = json.loads(response.choices[0].message.content)
+
+        print (response_json)
+
+
+        for topic in response_json.get("topics", []):
+            topic_id = topic["id"]
+            title = topic["title"].strip()
+            description = topic["description"].strip()
+            url = topic.get("url", "").strip()
+
+            editabs.save_chat_history(user_id, "assistant", topic_id, title, description, url)
+
+        print(f"Обработан канал: {channel} и отправлен в GPT.")
+
+        await asyncio.sleep(2)
+
+    await bot.send_message(chat_id, "С парсингом я закончил", reply_markup=get_inline_keyboard3())
+
+
+
+async def top_titles(callback_query):
+
+    user_id = callback_query.from_user.id
+
+    history  = editabs.get_chat_history(user_id,role="assistant", title=1)
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "Выяви из этих заголовков часто повторяющиеся. В ответе предоставь title и url"
+             },
+            {"role": "user", "content": f"Description: {history}\n\n Выяви из этих заголовков часто повторяющиеся и в ответе предоставь топ 5 по убыванию.  В ответе предоставь title и url"}
+            ],
+
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "titles",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "topics": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "integer"},
+                                    "title": {"type": "string"},
+                                    "url": {"type": "string"}
+                                    },
+                                "required": ["id", "title",  "url"],
+                                "additionalProperties": False
+                                }
+                            }
+                        },
+                    "required": ["topics"],
+                    "additionalProperties": False
+                    },
+                "strict": True
+                }
+            },
+        temperature=0.4
+        )
+
+    response_json = json.loads(response.choices[0].message.content)
+
+    print (response_json)
+
+    topics_with_descriptions = []
+
+    for topic in response_json.get("topics", []):
+        url = topic.get("url", "")
+        description = editabs.get_description_by_url(url)  #  Ищем описание по `url`
+
+        topics_with_descriptions.append({
+            "id": topic["id"],
+            "title": topic["title"],
+            "url": url,
+            "description": description if description else "Описание не найдено"
+            })
+
+    titles = [{"id": topic["id"], "title": topic["title"], "url": topic["url"]} for topic in topics_with_descriptions]
+
+
+    return titles
+
+
+
+    # Обработчик выбора /generate
+async def generate (callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    chat_id = callback_query.message.chat.id
+
+
 
     # news, image_url = await generate_news(callback_query)
-    news = await gen_titles(callback_query)
+    news = await top_titles (callback_query)
 
-    # except:
-    #
-    #     await bot.send_message(chat_id=chat_id, text="Нужно добавить каналы, чтобы придумать или добавленные каналы больше не существуют", reply_markup=get_inline_keyboard4())
-    #     return
+
+
     news = escape_markdown_v2(news)
+
+
+
 
     # await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}\n\n[Изображение статьи]({image_url})", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
     await bot.send_message(chat_id, text=f"{news}",parse_mode="MarkdownV2",  reply_markup=get_inline_keyboard2(), disable_web_page_preview=True)
@@ -802,8 +865,8 @@ async def generate_news_handler(callback_query: types.CallbackQuery):
 async def main():
     dp.message.register(command_start_handler, Command("start"))
 
-    dp.callback_query.register(generate_news_handler, lambda c: c.data == "change")
-    dp.callback_query.register(generate_news_handler, lambda c: c.data == "generate")
+    # dp.callback_query.register(generate_news_handler, lambda c: c.data == "change")
+    dp.callback_query.register(generate, lambda c: c.data == "generate")
     # dp.callback_query.register(regenerate_news_handler, lambda c: c.data == "regenerate")
     dp.callback_query.register(toggle_prompt_handler, lambda c: c.data == "toggle_prompt")
     # dp.callback_query.register(new_image_handler, lambda c: c.data == "new_image")

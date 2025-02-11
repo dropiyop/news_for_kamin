@@ -61,7 +61,10 @@ def init_db():
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         user_id INTEGER NOT NULL,
         role TEXT CHECK(role IN ('user', 'assistant')) NOT NULL,
-        content TEXT NOT NULL
+        topic_id INTEGER NOT NULL,
+        title TEXT NOT NULL,
+        description TEXT NOT NULL,
+        url TEXT
     )
     """)
 

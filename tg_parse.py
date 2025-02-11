@@ -20,9 +20,9 @@ phone = os.getenv('phone')
 client = TelegramClient(phone, api_id, api_hash)
 
 
-async def fetch_messages_by_date(chat_id):
+async def fetch_messages_by_date(chat_id,days):
     end_date = datetime.now(timezone.utc)
-    start_date = end_date - timedelta(days=1)
+    start_date = end_date - timedelta(days)
 
     messages = []
     offset_id = 0  # Начинаем с последнего сообщения
@@ -38,6 +38,7 @@ async def fetch_messages_by_date(chat_id):
             max_id=0,
             min_id=0,
             hash=0
+
             ))
 
 
@@ -59,7 +60,7 @@ async def fetch_messages_by_date(chat_id):
     return messages
 
 
-async def parse(url_channel):
+async def parse(url_channel,days):
 
     async with client:
         try:
@@ -67,7 +68,7 @@ async def parse(url_channel):
             entity = await client.get_entity(url_channel)
 
             # Получаем сообщения
-            messages = await fetch_messages_by_date(entity)
+            messages = await fetch_messages_by_date(entity,days)
             return messages
 
         except ChannelInvalidError:
@@ -98,7 +99,7 @@ async def parse(url_channel):
 # # Запускаем основной процесс
 # chat_id = "https://t.me/cgevent"  # Укажите нужный ID чата
 #
-# asyncio.run(parse(chat_id))
+# asyncio.run(parse(chat_id,days))
 
 
 
