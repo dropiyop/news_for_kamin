@@ -1,11 +1,8 @@
 import os
 from datetime import datetime, timedelta, timezone
 from telethon.sync import TelegramClient
-from telethon.tl.functions.messages import GetDialogsRequest
-from telethon.tl.types import InputPeerEmpty
 from telethon.tl.functions.messages import GetHistoryRequest
 from telethon.errors import ChannelInvalidError, ChannelPrivateError, ChannelTooBigError
-from telethon.tl.types import PeerChannel
 import dotenv
 import asyncio
 
