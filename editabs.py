@@ -4,12 +4,12 @@ from database import  get_connection
 
 
 
-def add_user_channel(user_id, channel):
+def add_user_channel(user_id, channel, channel_name):
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("INSERT OR IGNORE INTO user_channels (user_id, channel) VALUES (?, ?)", (user_id, channel))
+    cursor.execute("INSERT OR IGNORE INTO user_channels (user_id, channel, channel_name) VALUES (?, ?, ?)", (user_id, channel, channel_name))
     conn.commit()
     conn.close()
 
@@ -31,13 +31,24 @@ def all_remove_channels(user_id):
     conn.commit()
     conn.close()
 
+def get_all_user_ids():
+    """Получает всех пользователей из таблицы `user_channels`"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT DISTINCT user_id FROM user_channels")
+    user_ids = [row[0] for row in cursor.fetchall()]
+
+    conn.close()
+    return user_ids
+
 def get_user_channels(user_id):
 
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("SELECT channel FROM user_channels WHERE user_id = ?", (user_id,))
-    channels = [row[0] for row in cursor.fetchall()]
+    cursor.execute("SELECT channel, channel_name FROM user_channels WHERE user_id = ?", (user_id,))
+    channels = cursor.fetchall()
     conn.close()
     return channels
 
@@ -69,6 +80,20 @@ def get_client_user_id(user_id):
     return result[0] if result else None
 
 
+def get_client_users():
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT * FROM init_clients")
+
+    result = cursor.fetchall()
+
+    conn.close()
+
+    # Если результат найден, возвращаем user_id, иначе None
+    return result if result else None
+
+
 def remove_user(user_id):
     """Удаляет пользователя из базы данных"""
     conn = get_connection()
@@ -83,10 +108,11 @@ def remove_user(user_id):
 
 
 
-def get_chat_history(user_id, role = None, title = None):
+def get_chat_history(user_id = None, role = None, title = None):
     """Получает историю сообщений пользователя из базы данных"""
     conn = get_connection()
     cursor = conn.cursor()
+
 
     if role:
         cursor.execute("""
@@ -126,18 +152,27 @@ def get_chat_history(user_id, role = None, title = None):
         conn.close()
         return messages # Возвращает список сообщений
 
+
+
 def save_chat_history(user_id, role, topic_id, title, description, url):
-    """Сохраняет историю сообщений пользователя в базе"""
+    """Сохраняет историю сообщений пользователя в базе. Если url уже существует, не добавляет повторно."""
     conn = get_connection()
     cursor = conn.cursor()
 
-    cursor.execute("""
-        INSERT OR IGNORE INTO chat_history (user_id, role, topic_id, title, description, url)
-        VALUES (?, ?, ?, ?, ?, ?)
-    """, (user_id, role, topic_id, title, description, url))
+    # Проверяем, есть ли запись с таким url
+    cursor.execute("SELECT COUNT(*) FROM chat_history WHERE url = ?", (url,))
+    count = cursor.fetchone()[0]
 
-    conn.commit()
+    if count == 0:
+        # Если запись отсутствует, добавляем её
+        cursor.execute("""
+            INSERT INTO chat_history (user_id, role, topic_id, title, description, url)
+            VALUES (?, ?, ?, ?, ?, ?)
+        """, (user_id, role, topic_id, title, description, url))
+        conn.commit()
+
     conn.close()
+
 
 
 def get_description_by_url(url):
@@ -154,7 +189,7 @@ def get_description_by_url(url):
 
     return result[0] if result else None
 
-
+#
 # ff = get_chat_history(user_id='357981474', role = "assistant", title=1)
 # print (ff)
 #

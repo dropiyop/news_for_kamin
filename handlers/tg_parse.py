@@ -20,10 +20,9 @@ client = TelegramClient(phone, api_id, api_hash)
 async def fetch_messages_by_date(chat_id,days):
     end_date = datetime.now(timezone.utc)
     start_date = end_date - timedelta(days)
-
     messages = []
     offset_id = 0  # Начинаем с последнего сообщения
-    limit = 10  # Количество сообщений за один запрос
+    limit = 0  # Количество сообщений за один запрос
 
     while True:
         history = await client(GetHistoryRequest(
@@ -38,14 +37,13 @@ async def fetch_messages_by_date(chat_id,days):
 
             ))
 
-
-
         if not history.messages:
             break
 
         for message in history.messages:
             # Проверяем, входит ли сообщение в указанный диапазон дат
             if start_date <= message.date < end_date:
+
                 messages.append(message)
             elif message.date < start_date:
                 # Если достигли сообщений до нужной даты, останавливаем цикл

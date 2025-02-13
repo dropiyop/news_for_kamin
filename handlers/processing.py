@@ -12,7 +12,6 @@ async def compress_text(text):
     return text[:max_length] if len(text) > max_length else text
 
 
-
 def escape_markdown_v2(text):
     """Экранирует специальные символы для MarkdownV2 и форматирует список тем"""
     escape_chars = r"_*[]()~`>#+-=|{}.!"

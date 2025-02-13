@@ -1,8 +1,23 @@
-from Init_client import *
+import editabs
+from . import buttons
+from init_client import *
+import config
+import re
+import base64
+import requests
+from handlers import processing
 from aiog import *
-from Handlers import Buttons, processing
 
 
+@dp.callback_query(lambda c: c.data == "back_to_main")
+async def back_to_main(callback: types.CallbackQuery):
+
+    await callback.message.edit_text("Давай, придумывай", parse_mode="Markdown",reply_markup=buttons.get_inline_keyboard())
+
+
+@dp.callback_query(lambda c: c.data == "toggle_prompt")
+async def toggle_prompt_handler(callback_query: types.CallbackQuery, state: FSMContext):
+    user_id = callback_query.from_user.id
 
 
 @dp.callback_query(lambda c: c.data ==  "gen_news" )
@@ -130,4 +145,4 @@ async def generate_news(callback_query, state: FSMContext):
     message_id=callback_query.message.message_id,
     text=callback_query.message.text, reply_markup=None, disable_web_page_preview=True)
 
-    await bot.send_message(chat_id=chat_id, text=generate_text, parse_mode="MarkdownV2", reply_markup=Buttons.get_inline_keyboard3(), disable_web_page_preview=True)
+    await bot.send_message(chat_id=chat_id, text=generate_text, parse_mode="MarkdownV2", reply_markup=buttons.get_inline_keyboard3(), disable_web_page_preview=True)

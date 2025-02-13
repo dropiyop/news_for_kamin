@@ -14,11 +14,16 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
+    # cursor.execute("""
+    #     DROP TABLE user_channels
+    #     """)
+
     # Таблица для хранения каналов пользователей
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS user_channels (
             user_id INTEGER,
             channel TEXT,
+            channel_name TEXT,
             PRIMARY KEY (user_id, channel)
         )
     """)

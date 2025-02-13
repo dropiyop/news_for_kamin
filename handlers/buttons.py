@@ -1,10 +1,17 @@
 from aiog import *
 
 
+def get_bottom_buttons():
+    keyboard = aiogram.types.ReplyKeyboardMarkup(
+        keyboard=[[aiogram.types.KeyboardButton(text="Каналы"), aiogram.types.KeyboardButton(text="Темы недели")]],
+        resize_keyboard=True)
+
+    return keyboard
+
 
 def get_inline_keyboard():
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="Придумать новость", callback_data="generate")],
+        [InlineKeyboardButton(text="Показать топ тем", callback_data="generate")],
         [InlineKeyboardButton(text="Свой запрос вкл\выкл", callback_data="toggle_prompt")],
         [InlineKeyboardButton(text="Изменить каналы", callback_data="change")]
         ])
