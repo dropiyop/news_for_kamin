@@ -3,8 +3,9 @@ import re
 
 def escape_markdown(text: str) -> str:
     """Экранирует специальные символы MarkdownV2"""
-    escape_chars = r"_*[]()~`>#+-=|{}.!<>"
-    return re.sub(r"([%s])" % re.escape(escape_chars), r"\\\1", text)
+
+    escape_chars = r"_*[]()~`>#+-=|{}.!"
+    return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 
 
 async def compress_text(text):

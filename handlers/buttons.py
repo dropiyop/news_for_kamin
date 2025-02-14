@@ -3,7 +3,8 @@ from aiog import *
 
 def get_bottom_buttons():
     keyboard = aiogram.types.ReplyKeyboardMarkup(
-        keyboard=[[aiogram.types.KeyboardButton(text="Каналы"), aiogram.types.KeyboardButton(text="Темы недели")]],
+        keyboard=[[aiogram.types.KeyboardButton(text="Каналы"), aiogram.types.KeyboardButton(text="Темы недели")],
+                   [aiogram.types.KeyboardButton(text="Удалить историю парсинга")]],
         resize_keyboard=True)
 
     return keyboard
@@ -95,6 +96,16 @@ def yesorno():
     (inline_keyboard=[
     [InlineKeyboardButton(text="ДА", callback_data="yes")],
     [InlineKeyboardButton(text="нет", callback_data="no")]
+    ])
+    )
+
+    return keyboard
+
+def parse_sevendays():
+    keyboard = (InlineKeyboardMarkup
+    (inline_keyboard=[
+    [InlineKeyboardButton(text="Собрать темы за предыдущие 7 дней", callback_data="parse_sevendays")],
+
     ])
     )
 

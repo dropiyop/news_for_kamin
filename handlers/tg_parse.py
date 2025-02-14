@@ -62,6 +62,7 @@ async def parse(url_channel,days):
             # Получаем entity (объект чата)
             entity = await client.get_entity(url_channel)
 
+
             # Получаем сообщения
             messages = await fetch_messages_by_date(entity,days)
             return messages

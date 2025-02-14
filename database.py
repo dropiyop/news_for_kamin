@@ -1,7 +1,7 @@
 import sqlite3
 
 # Имя файла базы данных
-DB_FILE = "FILE.db"
+DB_FILE = r"C:\NewsforKamin\pythonProject\FILE.db"
 
 
 def get_connection():
@@ -57,9 +57,7 @@ def init_db():
     if "chat_id" not in columns:
         cursor.execute("ALTER TABLE init_clients ADD COLUMN chat_id INTEGER")
 
-    # cursor.execute("""
-    #     DROP TABLE chat_history
-    #     """)
+
 
     cursor.execute("""
         CREATE TABLE IF NOT EXISTS chat_history (

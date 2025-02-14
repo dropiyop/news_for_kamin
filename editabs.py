@@ -37,10 +37,22 @@ def get_all_user_ids():
     cursor = conn.cursor()
 
     cursor.execute("SELECT DISTINCT user_id FROM user_channels")
+
     user_ids = [row[0] for row in cursor.fetchall()]
 
+    conn.commit()
     conn.close()
     return user_ids
+
+def get_user_url_channel(user_id):
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("SELECT channel FROM user_channels WHERE user_id = ?", (user_id,))
+    channels = cursor.fetchall()
+    conn.close()
+    return channels
 
 def get_user_channels(user_id):
 
@@ -105,6 +117,29 @@ def remove_user(user_id):
 
     print(f"🗑 Пользователь {user_id} удалён из базы данных.")
 
+def get_descriptions_by_title(title):
+    """Ищет описания по заголовкам в `chat_history`"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    query = "SELECT title, description FROM chat_history WHERE title LIKE ?"
+    cursor.execute(query, (f"%{title}%",))  # ✅ `?` принимает строку
+
+    descriptions = {row[0]: row[1] for row in cursor.fetchall()}
+
+    conn.commit()
+    conn.close()
+    return descriptions
+
+def delete_chat_history(user_id):
+
+    """Удаляет историю сообщений только для указанного `user_id`"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+    conn.commit()
+    conn.close()
 
 
 
@@ -190,7 +225,7 @@ def get_description_by_url(url):
     return result[0] if result else None
 
 #
-# ff = get_chat_history(user_id='357981474', role = "assistant", title=1)
+# ff = get_all_user_ids()
 # print (ff)
 #
 
