@@ -15,6 +15,9 @@ import states
 import re
 
 
+
+
+
 @dp.message(aiogram.F.text.lower() == "темы недели")
 async def button_channels(message: aiogram.types.Message) -> None:
     user_id = message.from_user.id
@@ -24,26 +27,53 @@ async def button_channels(message: aiogram.types.Message) -> None:
     else:
         df = pandas.DataFrame(history)
         df = df[df['title'] != 'НЕ ПО ТЕМЕ']
-        counts = df['title'].value_counts()  # это Series, отсортированная по убыванию
+        counts = df['title'].value_counts()
         counts_dict = counts.to_dict()
+
+        await send_topics_page(message, counts_dict, page=0)
+
+
+async def send_topics_page(message, count_dict, page=0):
+
+
+        page_size = 10
+        total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size else 0)
+
+        start_idx = page * page_size
+        end_idx = start_idx + page_size
+        topics_page = list(count_dict.items())[start_idx:end_idx]
 
         text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
                 "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
                 "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n")
-        for index, topic in enumerate(counts_dict.items(), start=1):
-            text += f"{index}. {topic[0]} *[{topic[1]}]*\n"
 
         builder = InlineKeyboardBuilder()
         row = []
-        for i in range(1, len(counts_dict)+1):
-            row.append(InlineKeyboardButton(text=str(i), callback_data=states.ChooseCallback(n=i, c=len(counts_dict), ch="").pack()))
 
-            if i % 8 == 0:
+        for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
+            text += f"{index}. {title} *[{count}]*\n"
+            row.append(InlineKeyboardButton(text=str(index), callback_data=states.ChooseCallback(n=index, c=len(topics_page), ch="").pack()))
+
+            if index % 8 == 0:
                 builder.row(*row)
                 row = []
 
         if row:
             builder.row(*row)
+
+        # for i in range(1, len(topics_page)+1):
+        #     row.append(InlineKeyboardButton(text=str(i), callback_data=states.ChooseCallback(n=i, c=len(topics_page), ch="").pack()))
+
+
+        navigation_buttons =[]
+
+        if page > 0:
+            navigation_buttons.append(InlineKeyboardButton(text="Назад", callback_data=f"page_{page - 1}"))
+        if page < total_pages - 1:
+            navigation_buttons.append(InlineKeyboardButton(text="Вперёд", callback_data=f"page_{page + 1}"))
+
+        if navigation_buttons:
+            builder.row(*navigation_buttons)
 
         builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
 
@@ -54,7 +84,6 @@ async def button_channels(message: aiogram.types.Message) -> None:
 
         await message.delete()
 
-
 @dp.callback_query(aiogram.F.data == "cancel_choose")
 async def add_channel_request(callback: types.CallbackQuery):
     await callback.message.edit_text(
@@ -63,67 +92,209 @@ async def add_channel_request(callback: types.CallbackQuery):
         reply_markup=None)
 
 
-@dp.callback_query(states.ChooseCallback.filter())
-async def add_topic_request(callback: types.CallbackQuery):
-    callback_data = states.ChooseCallback.unpack(callback.data)
-    chosen = [int(x) for x in callback_data.ch.split(',') if x]
+# @dp.callback_query(lambda c: c.data.startswith("page_"))
+# async def change_page(callback: types.CallbackQuery):
+#     """Обработчик кнопок '⬅ Назад' и 'Вперёд ➡'"""
+#     user_id = callback.from_user.id
+#     history = editabs.get_chat_history(user_id, role="assistant")
+#
+#     if not history:
+#         await callback.message.edit_text("А тем нет :(", reply_markup=buttons.parse_sevendays())
+#         return
+#
+#     df = pandas.DataFrame(history)
+#     df = df[df['title'] != 'НЕ ПО ТЕМЕ']
+#     counts_dict = df['title'].value_counts().to_dict()
+#
+#     page = int(callback.data.split("_")[1])
+#     await send_topics_page(callback.message, counts_dict, page=page)
+#
 
-    if callback_data.n in chosen:
-        chosen.remove(callback_data.n)
-    else:
-        chosen.append(callback_data.n)
 
-    if len(chosen) > 5:
-        await callback.answer(text="Максимальное количество тем - 5")
+
+
+selected_topics_per_user = {}
+
+# Обработчик навигационных кнопок (callback_data вида "page_<номер>")
+@dp.callback_query(lambda c: c.data and c.data.startswith("page_"))
+async def navigate_page(callback: types.CallbackQuery):
+    try:
+        new_page = int(callback.data.split("_")[1])
+    except ValueError:
+        await callback.answer("Ошибка навигации")
         return
 
-    chosen.sort()
-    chosen_str = ",".join(str(x) for x in chosen)
+    user_id = callback.from_user.id
+    history = editabs.get_chat_history(user_id, role="assistant")
+    if not history:
+        await bot.send_message(
+            chat_id=user_id,
+            text="А тем нет:(",
+            reply_markup=buttons.parse_sevendays()
+        )
+        return
+
+    df = pandas.DataFrame(history)
+    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
+    counts = df['title'].value_counts()
+    count_dict = counts.to_dict()
+
+
+    chosen = selected_topics_per_user.get(user_id, [])
+
+    page_size = 10
+    total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
+    start_idx = new_page * page_size
+    topics_page = list(count_dict.items())[start_idx:start_idx + page_size]
 
     builder = InlineKeyboardBuilder()
     row = []
-    for i in range(1, callback_data.c + 1):
-        if i in chosen:
-            button_text = "✅"
-        else:
-            button_text = str(i)
+    for global_index, (title, count) in enumerate(topics_page, start=start_idx + 1):
+        button_text = "✅" if global_index in chosen else str(global_index)
+        # Передаём текущую страницу в callback_data
+        data = states.ChooseCallback(
+            n=global_index,
+            c=len(count_dict),
+            ch=",".join(map(str, chosen)),
+            page=new_page
+        ).pack()
 
-        row.append(InlineKeyboardButton(text=button_text, callback_data=states.ChooseCallback(n=i, c=callback_data.c, ch=chosen_str).pack()))
-        if i % 8 == 0:
+        row.append(InlineKeyboardButton(text=button_text, callback_data=data))
+        if len(row) % 5 == 0:
             builder.row(*row)
             row = []
-
     if row:
         builder.row(*row)
 
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
 
-    if len(chosen) > 0:
-        builder.row(InlineKeyboardButton(text="Сгенерировать новость", callback_data=states.GenerateCallback(choose=chosen_str).pack()))
+    if chosen:
+        builder.row(InlineKeyboardButton(
+            text="Сгенерировать новость",
+            callback_data=states.GenerateCallback(choose=",".join(map(str, chosen))).pack()
+        ))
 
-    await callback.message.edit_text(text=callback.message.md_text, parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2, reply_markup=builder.as_markup())
+    navigation_buttons = []
+    if new_page > 0:
+        navigation_buttons.append(InlineKeyboardButton(text="Назад", callback_data=f"page_{new_page - 1}"))
+    if new_page < total_pages - 1:
+        navigation_buttons.append(InlineKeyboardButton(text="Вперёд", callback_data=f"page_{new_page + 1}"))
+    if navigation_buttons:
+        builder.row(*navigation_buttons)
+
+    await callback.message.edit_text(
+        text=callback.message.md_text,
+        parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
+        reply_markup=builder.as_markup()
+    )
+
+
+# Обработчик выбора темы (callback_data формируется через states.ChooseCallback)
+@dp.callback_query(states.ChooseCallback.filter())
+async def add_topic_request(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    history = editabs.get_chat_history(user_id, role="assistant")
+    if not history:
+        await bot.send_message(
+            chat_id=user_id,
+            text="А тем нет:(",
+            reply_markup=buttons.parse_sevendays()
+        )
+        return
+
+    df = pandas.DataFrame(history)
+    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
+    counts = df['title'].value_counts()
+    count_dict = counts.to_dict()
+
+    callback_data = states.ChooseCallback.unpack(callback.data)
+    # Используем переданную страницу или вычисляем её по умолчанию
+    page = getattr(callback_data, "page", callback_data.n // 10)
+
+    if user_id not in selected_topics_per_user:
+        selected_topics_per_user[user_id] = []
+    chosen = selected_topics_per_user[user_id]
+
+    # Переключение выбора темы
+    if callback_data.n in chosen:
+        chosen.remove(callback_data.n)
+    else:
+        if len(chosen) >= 5:
+            await callback.answer(text="Максимальное количество тем - 5")
+            return
+        chosen.append(callback_data.n)
+    selected_topics_per_user[user_id] = chosen
+
+    page_size = 10
+    total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
+    start_idx = page * page_size
+    topics_page = list(count_dict.items())[start_idx:start_idx + page_size]
+
+    builder = InlineKeyboardBuilder()
+    row = []
+    for global_index, (title, count) in enumerate(topics_page, start=start_idx + 1):
+        button_text = "✅" if global_index in chosen else str(global_index)
+        data = states.ChooseCallback(
+            n=global_index,
+            c=len(count_dict),
+            ch=",".join(map(str, chosen)),
+            page=page
+        ).pack()
+        row.append(InlineKeyboardButton(text=button_text, callback_data=data))
+        if len(row) % 5 == 0:
+            builder.row(*row)
+            row = []
+    if row:
+        builder.row(*row)
+
+    builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
+
+    if chosen:
+        builder.row(InlineKeyboardButton(
+            text="Сгенерировать новость",
+            callback_data=states.GenerateCallback(choose=",".join(map(str, chosen))).pack()
+        ))
+
+    navigation_buttons = []
+    if page > 0:
+        navigation_buttons.append(InlineKeyboardButton(text="Назад", callback_data=f"page_{page - 1}"))
+    if page < total_pages - 1:
+        navigation_buttons.append(InlineKeyboardButton(text="Вперёд", callback_data=f"page_{page + 1}"))
+    if navigation_buttons:
+        builder.row(*navigation_buttons)
+
+    await callback.message.edit_text(
+        text=callback.message.md_text,
+        parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
+        reply_markup=builder.as_markup()
+    )
 
 
 
 
 @dp.callback_query(states.GenerateCallback.filter())
 async def add_topic(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
     callback_data = states.GenerateCallback.unpack(callback.data)
     chosen = [int(x) for x in callback_data.choose.split(',') if x]
 
-    selected_topics = []
-    for line in callback.message.text.splitlines():
-        match = re.match(r'^(\d+)\.\s*(.+)$', line)
-        if match:
-            num = int(match.group(1))
-            topic_text = match.group(2)
-            if num in chosen:
-                selected_topics.append(f"{topic_text.rsplit('[')[0].strip()}")
+    history = editabs.get_chat_history(user_id, role="assistant")
+    df = pandas.DataFrame(history)
+    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
+    counts = df['title'].value_counts().to_dict()
+    topics = list(counts.keys())
 
+    selected_topics = [topics[i - 1] for i in chosen if 0 <= i - 1 < len(topics)]
+
+    if not selected_topics:
+        await callback.answer("Вы не выбрали ни одной темы!", show_alert=True)
+        return
+
+        # Вызываем генерацию
     await news.generate_news(callback, selected_topics)
 
-
-
+    # После генерации сбрасываем выбранные темы для пользователя
+    selected_topics_per_user[user_id] = []
 
 
 

@@ -31,6 +31,6 @@ def escape_markdown_v2(text):
 
         text = "".join(formatted_text)
 
-    # Экранируем специальные символы для MarkdownV2
+    # Экранируем специальные символы ля MarkdownV2
     return re.sub(f"([{re.escape(escape_chars)}])", r"\\\1", text)
 

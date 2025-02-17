@@ -123,9 +123,9 @@ def get_descriptions_by_title(title):
     cursor = conn.cursor()
 
     query = "SELECT title, description FROM chat_history WHERE title LIKE ?"
-    cursor.execute(query, (f"%{title}%",))  # ✅ `?` принимает строку
+    cursor.execute(query, (f"%{title}%",))
 
-    descriptions = {row[0]: row[1] for row in cursor.fetchall()}
+    descriptions = {row[1] for row in cursor.fetchall()}
 
     conn.commit()
     conn.close()
