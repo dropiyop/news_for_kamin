@@ -33,63 +33,81 @@ async def button_channels(message: aiogram.types.Message) -> None:
         await send_topics_page(message, counts_dict, page=0)
 
 
-async def send_topics_page(message, count_dict, page=0):
+async def send_topics_page(message, count_dict, page=0, chosen=None):
+    if chosen is None:
+        chosen = []  # список выбранных тем
 
+    page_size = 10
+    total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size else 0)
 
-        page_size = 10
-        total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size else 0)
+    start_idx = page * page_size
+    end_idx = start_idx + page_size
+    topics_page = list(count_dict.items())[start_idx:end_idx]
 
-        start_idx = page * page_size
-        end_idx = start_idx + page_size
-        topics_page = list(count_dict.items())[start_idx:end_idx]
+    text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
+            "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
+            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n")
 
-        text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
-                "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
-                "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n")
+    builder = InlineKeyboardBuilder()
+    row = []
 
-        builder = InlineKeyboardBuilder()
-        row = []
-
-        for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
-            text += f"{index}. {title} *[{count}]*\n"
-            row.append(InlineKeyboardButton(text=str(index), callback_data=states.ChooseCallback(n=index, c=len(topics_page), ch="").pack()))
-
-            if index % 8 == 0:
-                builder.row(*row)
-                row = []
-
-        if row:
+    # Формируем кнопки для каждой темы на текущей странице
+    for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
+        # Если тема выбрана, можно отметить её галочкой
+        button_text = "✅" if index in chosen else str(index)
+        text += f"{index}. {title} *[{count}]*\n"
+        row.append(InlineKeyboardButton(
+            text=button_text,
+            callback_data=states.ChooseCallback(
+                n=index,
+                c=len(count_dict),
+                ch=",".join(map(str, chosen)),
+                page=page
+            ).pack()
+        ))
+        # Разбиваем ряды по 8 кнопок (можно настроить под себя)
+        if (index - start_idx) % 8 == 0:
             builder.row(*row)
+            row = []
+    if row:
+        builder.row(*row)
 
-        # for i in range(1, len(topics_page)+1):
-        #     row.append(InlineKeyboardButton(text=str(i), callback_data=states.ChooseCallback(n=i, c=len(topics_page), ch="").pack()))
+    # Формирование навигационных кнопок с использованием собственного callback:
+    navigation_buttons = []
+    if page > 0:
+        navigation_buttons.append(InlineKeyboardButton(
+            text="Назад",
+            callback_data=states.NumberPageCallback(
+                page=page - 1,
+                choose=",".join(map(str, chosen))
+            ).pack()
+        ))
+    if page < total_pages - 1:
+        navigation_buttons.append(InlineKeyboardButton(
+            text="Вперёд",
+            callback_data=states.NumberPageCallback(
+                page=page + 1,
+                choose=",".join(map(str, chosen))
+            ).pack()
+        ))
+    if navigation_buttons:
+        builder.row(*navigation_buttons)
+
+    builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
+
+    await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
+    await message.delete()
 
 
-        navigation_buttons =[]
-
-        if page > 0:
-            navigation_buttons.append(InlineKeyboardButton(text="Назад", callback_data=f"page_{page - 1}"))
-        if page < total_pages - 1:
-            navigation_buttons.append(InlineKeyboardButton(text="Вперёд", callback_data=f"page_{page + 1}"))
-
-        if navigation_buttons:
-            builder.row(*navigation_buttons)
-
-        builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
-
-        # text= processing.escape_markdown(text)
-
-
-        await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
-
-        await message.delete()
 
 @dp.callback_query(aiogram.F.data == "cancel_choose")
 async def add_channel_request(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
     await callback.message.edit_text(
         text=callback.message.md_text,
         parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
         reply_markup=None)
+    selected_topics_per_user[user_id] = []
 
 
 # @dp.callback_query(lambda c: c.data.startswith("page_"))
@@ -115,14 +133,12 @@ async def add_channel_request(callback: types.CallbackQuery):
 
 selected_topics_per_user = {}
 
-# Обработчик навигационных кнопок (callback_data вида "page_<номер>")
-@dp.callback_query(lambda c: c.data and c.data.startswith("page_"))
-async def navigate_page(callback: types.CallbackQuery):
-    try:
-        new_page = int(callback.data.split("_")[1])
-    except ValueError:
-        await callback.answer("Ошибка навигации")
-        return
+@dp.callback_query(states.NumberPageCallback.filter())
+async def navigate_page(callback: types.CallbackQuery, callback_data: states.NumberPageCallback):
+    new_page = callback_data.page
+
+    # Преобразуем строку с выбранными темами в список целых чисел
+    chosen = [int(x) for x in callback_data.choose.split(",") if x]
 
     user_id = callback.from_user.id
     history = editabs.get_chat_history(user_id, role="assistant")
@@ -139,9 +155,6 @@ async def navigate_page(callback: types.CallbackQuery):
     counts = df['title'].value_counts()
     count_dict = counts.to_dict()
 
-
-    chosen = selected_topics_per_user.get(user_id, [])
-
     page_size = 10
     total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
     start_idx = new_page * page_size
@@ -149,25 +162,26 @@ async def navigate_page(callback: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     row = []
+    text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
+            "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
+            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n")
     for global_index, (title, count) in enumerate(topics_page, start=start_idx + 1):
         button_text = "✅" if global_index in chosen else str(global_index)
-        # Передаём текущую страницу в callback_data
+        text += f"{global_index}. {title} *[{count}]*\n"
         data = states.ChooseCallback(
             n=global_index,
             c=len(count_dict),
             ch=",".join(map(str, chosen)),
             page=new_page
         ).pack()
-
         row.append(InlineKeyboardButton(text=button_text, callback_data=data))
-        if len(row) % 5 == 0:
+        if (global_index - start_idx) % 8 == 0:
             builder.row(*row)
             row = []
     if row:
         builder.row(*row)
 
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
-
     if chosen:
         builder.row(InlineKeyboardButton(
             text="Сгенерировать новость",
@@ -176,15 +190,27 @@ async def navigate_page(callback: types.CallbackQuery):
 
     navigation_buttons = []
     if new_page > 0:
-        navigation_buttons.append(InlineKeyboardButton(text="Назад", callback_data=f"page_{new_page - 1}"))
+        navigation_buttons.append(InlineKeyboardButton(
+            text="Назад",
+            callback_data=states.NumberPageCallback(
+                page=new_page - 1,
+                choose=",".join(map(str, chosen))
+            ).pack()
+        ))
     if new_page < total_pages - 1:
-        navigation_buttons.append(InlineKeyboardButton(text="Вперёд", callback_data=f"page_{new_page + 1}"))
+        navigation_buttons.append(InlineKeyboardButton(
+            text="Вперёд",
+            callback_data=states.NumberPageCallback(
+                page=new_page + 1,
+                choose=",".join(map(str, chosen))
+            ).pack()
+        ))
     if navigation_buttons:
         builder.row(*navigation_buttons)
 
     await callback.message.edit_text(
-        text=callback.message.md_text,
-        parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
+        text=text,
+        parse_mode=aiogram.enums.ParseMode.MARKDOWN,
         reply_markup=builder.as_markup()
     )
 
@@ -233,13 +259,16 @@ async def add_topic_request(callback: types.CallbackQuery):
     builder = InlineKeyboardBuilder()
     row = []
     for global_index, (title, count) in enumerate(topics_page, start=start_idx + 1):
+
         button_text = "✅" if global_index in chosen else str(global_index)
+
         data = states.ChooseCallback(
             n=global_index,
             c=len(count_dict),
             ch=",".join(map(str, chosen)),
             page=page
         ).pack()
+
         row.append(InlineKeyboardButton(text=button_text, callback_data=data))
         if len(row) % 5 == 0:
             builder.row(*row)
@@ -257,17 +286,30 @@ async def add_topic_request(callback: types.CallbackQuery):
 
     navigation_buttons = []
     if page > 0:
-        navigation_buttons.append(InlineKeyboardButton(text="Назад", callback_data=f"page_{page - 1}"))
+        navigation_buttons.append(InlineKeyboardButton(
+            text="Назад",
+            callback_data=states.NumberPageCallback(
+                page=page - 1,
+                choose=",".join(map(str, chosen))
+                ).pack()
+            ))
     if page < total_pages - 1:
-        navigation_buttons.append(InlineKeyboardButton(text="Вперёд", callback_data=f"page_{page + 1}"))
+        navigation_buttons.append(InlineKeyboardButton(
+            text="Вперёд",
+            callback_data=states.NumberPageCallback(
+                page=page + 1,
+                choose=",".join(map(str, chosen))
+                ).pack()
+            ))
     if navigation_buttons:
         builder.row(*navigation_buttons)
 
+
     await callback.message.edit_text(
-        text=callback.message.md_text,
-        parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
-        reply_markup=builder.as_markup()
-    )
+            text=callback.message.md_text,
+            parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
+            reply_markup=builder.as_markup()
+        )
 
 
 

@@ -20,3 +20,7 @@ class ChooseCallback(aiogram.filters.callback_data.CallbackData, prefix="c"):
 
 class GenerateCallback(aiogram.filters.callback_data.CallbackData, prefix="generate"):
     choose: str
+
+class NumberPageCallback(aiogram.filters.callback_data.CallbackData, prefix="c"):
+    page: int
+    choose: str
