@@ -5,7 +5,7 @@ import aiogram.enums
 
 import editabs
 from init_client import *
-from . import buttons, processing, tg_parse, news
+from . import buttons, processing, tg_parse, news, channels
 from . import news as package_news
 # from handlers import processing, tg_parse, news
 from aiog import *
@@ -22,8 +22,12 @@ import re
 async def button_channels(message: aiogram.types.Message) -> None:
     user_id = message.from_user.id
     history = editabs.get_chat_history(user_id, role="assistant")
-    if not history:
+    chann = editabs.get_user_channels(user_id)
+    if not history or not chann:
         await bot.send_message(chat_id=user_id, text="А тем нет:(",reply_markup=buttons.parse_sevendays())
+        await channels.button_channels(message)
+
+
     else:
         df = pandas.DataFrame(history)
         df = df[df['title'] != 'НЕ ПО ТЕМЕ']
@@ -141,7 +145,7 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
     chosen = [int(x) for x in callback_data.choose.split(",") if x]
 
     user_id = callback.from_user.id
-    history = editabs.get_chat_history(user_id, role="assistant")
+    history= editabs.get_chat_history(user_id, role="assistant")
     if not history:
         await bot.send_message(
             chat_id=user_id,
@@ -220,13 +224,14 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
 async def add_topic_request(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     history = editabs.get_chat_history(user_id, role="assistant")
+    chann = editabs.get_user_channels(user_id)
     if not history:
         await bot.send_message(
             chat_id=user_id,
             text="А тем нет:(",
             reply_markup=buttons.parse_sevendays()
         )
-        return
+
 
     df = pandas.DataFrame(history)
     df = df[df['title'] != 'НЕ ПО ТЕМЕ']
