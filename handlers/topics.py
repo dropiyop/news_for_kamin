@@ -70,7 +70,7 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
             ).pack()
         ))
         # Разбиваем ряды по 5 кнопок (можно настроить под себя)
-        if (index - start_idx) % 5 == 0:
+        if len(row) == 5:
             builder.row(*row)
             row = []
     if row:
@@ -101,37 +101,6 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
 
     await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
     await message.delete()
-
-
-
-@dp.callback_query(aiogram.F.data == "cancel_choose")
-async def cancel_channel_request(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
-    await callback.message.edit_text(
-        text=callback.message.md_text,
-        parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
-        reply_markup=None)
-    selected_topics_per_user[user_id] = []
-
-
-# @dp.callback_query(lambda c: c.data.startswith("page_"))
-# async def change_page(callback: types.CallbackQuery):
-#     """Обработчик кнопок '⬅ Назад' и 'Вперёд ➡'"""
-#     user_id = callback.from_user.id
-#     history = editabs.get_chat_history(user_id, role="assistant")
-#
-#     if not history:
-#         await callback.message.edit_text("А тем нет :(", reply_markup=buttons.parse_sevendays())
-#         return
-#
-#     df = pandas.DataFrame(history)
-#     df = df[df['title'] != 'НЕ ПО ТЕМЕ']
-#     counts_dict = df['title'].value_counts().to_dict()
-#
-#     page = int(callback.data.split("_")[1])
-#     await send_topics_page(callback.message, counts_dict, page=page)
-#
-
 
 
 
@@ -169,22 +138,25 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
     text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
             "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
             "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n")
-    for global_index, (title, count) in enumerate(topics_page, start=start_idx + 1):
-        button_text = "✅" if global_index in chosen else str(global_index)
-        text += f"{global_index}. {title} *[{count}]*\n"
-        data = states.ChooseCallback(
-            n=global_index,
-            c=len(count_dict),
-            ch=",".join(map(str, chosen)),
-            page=new_page
-        ).pack()
-        row.append(InlineKeyboardButton(text=button_text, callback_data=data))
-        if (global_index - start_idx) % 5 == 0:
+    for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
+        # Если тема выбрана, можно отметить её галочкой
+        button_text = "✅" if index in chosen else str(index)
+        text += f"{index}. {title} *[{count}]*\n"
+        row.append(InlineKeyboardButton(
+            text=button_text,
+            callback_data=states.ChooseCallback(
+                n=index,
+                c=len(count_dict),
+                ch=",".join(map(str, chosen)),
+                page=new_page
+                ).pack()
+            ))
+        # Разбиваем ряды по 5 кнопок (можно настроить под себя)
+        if len(row) == 5:
             builder.row(*row)
             row = []
     if row:
         builder.row(*row)
-
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
     if chosen:
         builder.row(InlineKeyboardButton(
@@ -221,7 +193,8 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
 
 # Обработчик выбора темы (callback_data формируется через states.ChooseCallback)
 @dp.callback_query(states.ChooseCallback.filter())
-async def add_topic_request(callback: types.CallbackQuery):
+async def add_topic_request(callback: types.CallbackQuery,  callback_data = states.ChooseCallback):
+    page = callback_data.page
     user_id = callback.from_user.id
     history = editabs.get_chat_history(user_id, role="assistant")
     chann = editabs.get_user_channels(user_id)
@@ -238,9 +211,6 @@ async def add_topic_request(callback: types.CallbackQuery):
     counts = df['title'].value_counts()
     count_dict = counts.to_dict()
 
-    callback_data = states.ChooseCallback.unpack(callback.data)
-    # Используем переданную страницу или вычисляем её по умолчанию
-    page = getattr(callback_data, "page", callback_data.n // 10)
 
     if user_id not in selected_topics_per_user:
         selected_topics_per_user[user_id] = []
@@ -263,24 +233,24 @@ async def add_topic_request(callback: types.CallbackQuery):
 
     builder = InlineKeyboardBuilder()
     row = []
-    for global_index, (title, count) in enumerate(topics_page, start=start_idx + 1):
-
-        button_text = "✅" if global_index in chosen else str(global_index)
-
-        data = states.ChooseCallback(
-            n=global_index,
-            c=len(count_dict),
-            ch=",".join(map(str, chosen)),
-            page=page
-        ).pack()
-
-        row.append(InlineKeyboardButton(text=button_text, callback_data=data))
-        if len(row) % 5 == 0:
+    for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
+        # Если тема выбрана, можно отметить её галочкой
+        button_text = "✅" if index in chosen else str(index)
+        row.append(InlineKeyboardButton(
+            text=button_text,
+            callback_data=states.ChooseCallback(
+                n=index,
+                c=len(count_dict),
+                ch=",".join(map(str, chosen)),
+                page=page
+                ).pack()
+            ))
+        # Разбиваем ряды по 5 кнопок (можно настроить под себя)
+        if len(row) == 5:
             builder.row(*row)
             row = []
     if row:
         builder.row(*row)
-
     builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
 
     if chosen:
@@ -317,6 +287,15 @@ async def add_topic_request(callback: types.CallbackQuery):
         )
 
 
+@dp.callback_query(aiogram.F.data == "cancel_choose")
+async def cancel_channel_request(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+    await callback.message.edit_text(
+        text=callback.message.md_text,
+        parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
+        reply_markup=None)
+    selected_topics_per_user[user_id] = []
+
 
 
 @dp.callback_query(states.GenerateCallback.filter())
@@ -324,7 +303,7 @@ async def add_topic(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     callback_data = states.GenerateCallback.unpack(callback.data)
     chosen = [int(x) for x in callback_data.choose.split(',') if x]
-
+    print (chosen)
     history = editabs.get_chat_history(user_id, role="assistant")
     df = pandas.DataFrame(history)
     df = df[df['title'] != 'НЕ ПО ТЕМЕ']

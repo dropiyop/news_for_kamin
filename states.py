@@ -13,14 +13,15 @@ class SelectDeleteCallback(aiogram.filters.callback_data.CallbackData, prefix="s
 class DeleteCallback(aiogram.filters.callback_data.CallbackData, prefix="del"):
     number: int
 
-class ChooseCallback(aiogram.filters.callback_data.CallbackData, prefix="c"):
+class ChooseCallback(aiogram.filters.callback_data.CallbackData, prefix="choose"):
     n: int
     c: int
     ch: str
+    page: int
 
 class GenerateCallback(aiogram.filters.callback_data.CallbackData, prefix="generate"):
     choose: str
 
-class NumberPageCallback(aiogram.filters.callback_data.CallbackData, prefix="c"):
+class NumberPageCallback(aiogram.filters.callback_data.CallbackData, prefix="page"):
     page: int
     choose: str
