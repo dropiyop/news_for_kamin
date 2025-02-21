@@ -1,5 +1,6 @@
 import asyncio
 import json
+from itertools import count
 
 import aiogram.enums
 
@@ -33,13 +34,21 @@ async def button_channels(message: aiogram.types.Message) -> None:
         df = df[df['title'] != 'НЕ ПО ТЕМЕ']
         counts = df['title'].value_counts()
         counts_dict = counts.to_dict()
+        all_dict = len(counts)
 
-        await send_topics_page(message, counts_dict, page=0)
+        await send_topics_page(message, counts_dict,page=0)
 
 
 async def send_topics_page(message, count_dict, page=0, chosen=None):
     if chosen is None:
         chosen = []  # список выбранных тем
+
+    user_id = message.from_user.id
+    history = editabs.get_chat_history(user_id, role="assistant")
+    df = pandas.DataFrame(history)
+    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
+    counts = df['title'].value_counts()
+    all_dict = len(counts)
 
     page_size = 10
     total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size else 0)
@@ -48,9 +57,12 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
     end_idx = start_idx + page_size
     topics_page = list(count_dict.items())[start_idx:end_idx]
 
+
+
     text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
             "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
-            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n")
+            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n"
+            f"Всего тем: {all_dict}\n\n")
 
     builder = InlineKeyboardBuilder()
     row = []
@@ -127,6 +139,7 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
     df = df[df['title'] != 'НЕ ПО ТЕМЕ']
     counts = df['title'].value_counts()
     count_dict = counts.to_dict()
+    all_dict = len(counts)
 
     page_size = 10
     total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
@@ -137,7 +150,10 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
     row = []
     text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
             "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
-            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n")
+            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n"
+            f"Всего тем: {all_dict}\n\n")
+
+
     for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
         # Если тема выбрана, можно отметить её галочкой
         button_text = "✅" if index in chosen else str(index)
