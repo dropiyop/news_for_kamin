@@ -40,7 +40,7 @@ async def shedule_title():
                         continue
 
                     link = f"{channel}/{msg.id}"
-                    msg.message = await processing.compress_text(msg.message)
+                    # msg.message = await processing.compress_text(msg.message)
                     if msg.message not in seen_messages:
                         seen_messages.add(msg.message)
                         selected_description.append({
@@ -109,6 +109,8 @@ def prepare_schedulers():
         misfire_grace_time=300,
         id="parse_channel"
     )
+
+    print(f"Планировщик запущен на каждый день 00:03")
 
     scheduler.start()
 

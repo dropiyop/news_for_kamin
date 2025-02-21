@@ -122,10 +122,10 @@ def get_descriptions_by_title(title):
     conn = get_connection()
     cursor = conn.cursor()
 
-    query = "SELECT title, description FROM chat_history WHERE title LIKE ?"
+    query = "SELECT title, description, url FROM chat_history WHERE title LIKE ?"
     cursor.execute(query, (f"%{title}%",))
 
-    descriptions = {row[1] for row in cursor.fetchall()}
+    descriptions =[ {'description':row[1], 'url': row[2]} for row in cursor.fetchall()]
 
     conn.commit()
     conn.close()
@@ -190,16 +190,16 @@ def get_chat_history(user_id = None, role = None, title = None):
 
 
 def save_chat_history(user_id, role, topic_id, title, description, url):
-    """Сохраняет историю сообщений пользователя в базе. Если url уже существует, не добавляет повторно."""
+    """Сохраняет историю сообщений пользователя в базе. Если url уже существует у данного пользователя, не добавляет повторно."""
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Проверяем, есть ли запись с таким url
-    cursor.execute("SELECT COUNT(*) FROM chat_history WHERE url = ?", (url,))
+    # Проверяем, есть ли запись с таким url у данного пользователя
+    cursor.execute("SELECT COUNT(*) FROM chat_history WHERE user_id = ? AND url = ?", (user_id, url))
     count = cursor.fetchone()[0]
 
     if count == 0:
-        # Если запись отсутствует, добавляем её
+        # Если у пользователя нет такой записи, добавляем её
         cursor.execute("""
             INSERT INTO chat_history (user_id, role, topic_id, title, description, url)
             VALUES (?, ?, ?, ?, ?, ?)
@@ -224,8 +224,12 @@ def get_description_by_url(url):
 
     return result[0] if result else None
 
-#
-# ff = get_all_user_ids()
-# print (ff)
-#
 
+
+# title="Эффективность ChatGPT в психотерапии и проблемы обновления голосовых помощников Siri и Alexa на базе генеративного ИИ"
+# topics_with_descriptions = {}
+# ff = get_descriptions_by_title(title)
+# topics_with_descriptions.setdefault(title,ff)
+# print (topics_with_descriptions)
+#
+#

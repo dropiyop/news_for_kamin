@@ -69,8 +69,8 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
                 page=page
             ).pack()
         ))
-        # Разбиваем ряды по 8 кнопок (можно настроить под себя)
-        if (index - start_idx) % 8 == 0:
+        # Разбиваем ряды по 5 кнопок (можно настроить под себя)
+        if (index - start_idx) % 5 == 0:
             builder.row(*row)
             row = []
     if row:
@@ -105,7 +105,7 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
 
 
 @dp.callback_query(aiogram.F.data == "cancel_choose")
-async def add_channel_request(callback: types.CallbackQuery):
+async def cancel_channel_request(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     await callback.message.edit_text(
         text=callback.message.md_text,
@@ -179,7 +179,7 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
             page=new_page
         ).pack()
         row.append(InlineKeyboardButton(text=button_text, callback_data=data))
-        if (global_index - start_idx) % 8 == 0:
+        if (global_index - start_idx) % 5 == 0:
             builder.row(*row)
             row = []
     if row:
@@ -440,7 +440,7 @@ async def manual_parse(callback_query: types.CallbackQuery):
                     continue
 
                 link = f"{channel_link}/{msg.id}"
-                msg.message = await processing.compress_text(msg.message)
+                # msg.message = await processing.compress_text(msg.message)
                 if msg.message not in seen_messages:
                     seen_messages.add(msg.message)
                     selected_description.append({
@@ -515,7 +515,7 @@ async def gen_titles_for_titles(channel_link, chat_id):
                 continue
 
             link = f"{channel_link}/{msg.id}"
-            msg.message = await processing.compress_text(msg.message)
+            # msg.message = await processing.compress_text(msg.message)
             if msg.message not in seen_messages:
                 seen_messages.add(msg.message)
                 selected_description.append({

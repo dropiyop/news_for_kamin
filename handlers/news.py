@@ -1,3 +1,5 @@
+from numpy.ma.extras import unique
+
 import editabs
 from . import buttons
 from init_client import *
@@ -11,7 +13,10 @@ from aiog import *
 
 async def send_long_message(chat_id, text, bot, reply_markup=None, parse_mode="Markdown"):
     for i in range(0, len(text), 4096):
-        await bot.send_message(chat_id=chat_id, text=text[i:i + 4096], reply_markup=reply_markup if i + 4096 >= len(text) else None, parse_mode="Markdown")
+        await bot.send_message(chat_id=chat_id, text=text[i:i + 4096], reply_markup=reply_markup if i + 4096 >= len(text) else None,
+                               parse_mode="Markdown",
+                               disable_web_page_preview=True
+                               )
 
 
 @dp.callback_query(lambda c: c.data == "back_to_main")
@@ -30,6 +35,7 @@ async def generate_news(callback_query, selected_topics):
     print(selected_topics)
 
     topics_with_descriptions = {}
+    unique_urls = {}
     message_id = callback_query.message.message_id
     chat_id = callback_query.message.chat.id
     user_id = callback_query.from_user.id
@@ -41,13 +47,15 @@ async def generate_news(callback_query, selected_topics):
     for title in selected_topics:
         description = editabs.get_descriptions_by_title(title)
 
+        for entry in description:
+            unique_urls.setdefault(title, []).append(entry["url"])
+
+
         if description:
             topics_with_descriptions.setdefault(title, description)
 
 
     print(topics_with_descriptions)
-
-
 
 
 
@@ -87,10 +95,21 @@ async def generate_news(callback_query, selected_topics):
 
     # formatted_text = re.sub(r'([.!?])\s+', r'\1\n\n', article_text)
 
-    escaped_text  = processing.escape_markdown(article_text)
+
+    text = "\n\n".join(
+        f"{title}:\n" + "\n".join(urls)
+        for title, urls in unique_urls.items()
+        )
+
+    print (text)
+
 
 
     await send_long_message(chat_id=chat_id, bot=bot, text=article_text, parse_mode="Markdown")
+
+
+
+    await  bot.send_message(chat_id=chat_id, text = text, parse_mode=None, disable_web_page_preview=True)
 
 
         # print(prompt)

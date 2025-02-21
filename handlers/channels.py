@@ -71,6 +71,28 @@ async def add_channel_request(callback: types.CallbackQuery):
 async def add_channel_request(callback: types.CallbackQuery):
     callback_data = states.SelectDeleteCallback.unpack(callback.data)
     numbers = [int(el) for el in callback_data.count.split(",")]
+
+
+    if len(numbers) == 1:
+        channel_number = numbers[0]
+
+        # Получаем ссылку на канал (если она нужна)
+        link_remove = get_channel_link(callback.message.md_text, channel_number)
+
+        # Удаляем канал из базы
+        editabs.remove_user_channel(callback.message.chat.id, link_remove)
+
+        # Отправляем подтверждение пользователю
+        await callback.message.edit_text(
+            text="Канал удалён! Список пуст. Воспользуйтесь кнопкой ниже для добавления.",
+            reply_markup=InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(text="Добавить канал", callback_data="add_channel")]
+                    ]
+                )
+            )
+        return
+
     builder = InlineKeyboardBuilder()
     row = []
     for i in numbers:
@@ -132,6 +154,8 @@ def remove_channel_and_get_numbers(message: str, index: int):
     lines = message.splitlines()  # Разбиваем на строки (сохраняем порядок)
     updated_lines = []
 
+    print (lines)
+
     # Шаблон для поиска строки, которая начинается (без учёта пробелов) с "index." + пробел/конец
     # Пример: index=3 -> ищем "^ *3\. "
     pattern_remove = rf'^\s*{index}\\\.\s'
@@ -177,6 +201,7 @@ async def add_channel_request(callback: types.CallbackQuery):
         return
 
     builder = InlineKeyboardBuilder()
+
 
     row = []
     for number in list_numbers:
