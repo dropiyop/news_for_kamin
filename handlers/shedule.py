@@ -112,7 +112,7 @@ def prepare_schedulers():
 
     scheduler.add_job(
         shedule_title,
-        apscheduler.triggers.cron.CronTrigger(hour=16, minute=34),
+        apscheduler.triggers.cron.CronTrigger(hour=0, minute=3),
         misfire_grace_time=300,
         id="parse_channel"
     )
