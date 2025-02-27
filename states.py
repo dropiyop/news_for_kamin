@@ -16,12 +16,27 @@ class DeleteCallback(aiogram.filters.callback_data.CallbackData, prefix="del"):
 class ChooseCallback(aiogram.filters.callback_data.CallbackData, prefix="choose"):
     n: int
     c: int
-    ch: str
+    chosen_id: str
     page: int
+    gen_id: int
 
 class GenerateCallback(aiogram.filters.callback_data.CallbackData, prefix="generate"):
-    choose: str
+    chosen_id: str
 
 class NumberPageCallback(aiogram.filters.callback_data.CallbackData, prefix="page"):
     page: int
-    choose: str
+    chosen_id: str
+    gen_id: int
+
+class GroupCallback(aiogram.filters.callback_data.CallbackData, prefix="group"):
+    gen_id: int
+    page: int
+    chosen_id: str
+
+class SubtopicCallback(aiogram.filters.callback_data.CallbackData, prefix="sub"):
+    group_id: int
+    subtopic_id: int
+
+class BackCallback(aiogram.filters.callback_data.CallbackData, prefix="back_to_groups"):
+    chosen_id: str
+

@@ -1,7 +1,8 @@
 import json
+from pydoc_data.topics import topics
 
 import apscheduler
-
+from .topics import top_themes
 from handlers import tg_parse
 import editabs
 from init_client import *
@@ -54,9 +55,12 @@ async def shedule_title():
 
                 chat_messages = chat.MessageHistory().add_message(
                     role=chat.Message.ROLE_SYSTEM,
-                    content=f"Ты получишь текста поста, твоя задача выделить основную тему для него, она должна "
-                            f"содержать в себе основные сущности о которых идет речь.\nЕсть список уже существующих тем: {history}.\n"
-                            f"Если текст поста подходит под одну из этих тем - выбери ее, а не придумывай новую."
+                    content=f"Ты получишь текст поста, твоя задача выделить основную тему для него"
+                            f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту новости, "
+                            f"НЕ ИСПОЛЬЗУЙ НИКАКИЕ ЗНАКИ ПРЕПИНАНИЯ"
+                            f"Посты с #Реклама игнорируй"
+                            f"придумывай подробную тему и уникальную тему.\nЕсть список уже существующих тем: {history}.\n"
+                            f"Если текст поста подходит под одну из этих тем, то есть содержит в себе такие же конкретные сущности о которых идет речь  - выбери ее, а не придумывай новую."
                             f"Если пост отличается от темы, придумай новую."
                             f"НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ.\n\n"
                             f"ТЕМА ДОЛЖНА ОТНОСИТЬСЯ К СФЕРЕ НЕЙРОННЫХ СЕТЕЙ, ИСКУССТВЕННОГО ИНТЕЛЛЕКТА И ПОДОБНОГО. "
@@ -96,7 +100,10 @@ async def shedule_title():
 
                 print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
 
+        await top_themes(user_id)
 
+    user_id = "357981474"
+    await bot.send_message(chat_id=user_id,text="Я нашел новости по расписанию")
 
 
 
@@ -105,7 +112,7 @@ def prepare_schedulers():
 
     scheduler.add_job(
         shedule_title,
-        apscheduler.triggers.cron.CronTrigger(hour=0, minute=3),
+        apscheduler.triggers.cron.CronTrigger(hour=16, minute=34),
         misfire_grace_time=300,
         id="parse_channel"
     )

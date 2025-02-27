@@ -3,7 +3,8 @@ import json
 from itertools import count
 
 import aiogram.enums
-
+from numpy.ma.core import choose
+from urllib3 import proxy_from_url
 import editabs
 from init_client import *
 from . import buttons, processing, tg_parse, news, channels
@@ -18,11 +19,11 @@ import re
 
 
 
-
 @dp.message(aiogram.F.text.lower() == "темы недели")
 async def button_channels(message: aiogram.types.Message) -> None:
     user_id = message.from_user.id
-    history = editabs.get_chat_history(user_id, role="assistant")
+    history = editabs.get_top(user_id , gen_id=None)
+    chosen_id = ""
     chann = editabs.get_user_channels(user_id)
     if not history or not chann:
         await bot.send_message(chat_id=user_id, text="А тем нет:(",reply_markup=buttons.parse_sevendays())
@@ -31,22 +32,22 @@ async def button_channels(message: aiogram.types.Message) -> None:
 
     else:
         df = pandas.DataFrame(history)
-        df = df[df['title'] != 'НЕ ПО ТЕМЕ']
         counts = df['title'].value_counts()
         counts_dict = counts.to_dict()
-        all_dict = len(counts)
 
-        await send_topics_page(message, counts_dict,page=0)
+        await send_group_list(message, user_id, chosen_id, counts_dict,page=0)
 
 
-async def send_topics_page(message, count_dict, page=0, chosen=None):
+async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chosen=None):
     if chosen is None:
         chosen = []  # список выбранных тем
 
-    user_id = message.from_user.id
-    history = editabs.get_chat_history(user_id, role="assistant")
+
+
+    print(f"send_group_list {chosen_id}")
+    print(user_id)
+    history = editabs.get_top(user_id, gen_id=None)
     df = pandas.DataFrame(history)
-    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
     counts = df['title'].value_counts()
     all_dict = len(counts)
 
@@ -59,10 +60,11 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
 
 
 
-    text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
-            "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
-            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n"
-            f"Всего тем: {all_dict}\n\n")
+    text = ("*Вот список обобщенных  тем, о которых говорили за прошлую неделю:*\n"
+            "_Выбрав одну из тем - можно увидеть список подтем_\n\n"
+            "_Выберите на клавиатуре номера тем_\n\n"
+            f"Всего тем: {all_dict}\n\n"
+            f"Выбранные Вами  темы: {chosen_id}\n\n")
 
     builder = InlineKeyboardBuilder()
     row = []
@@ -71,17 +73,106 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
     for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
         # Если тема выбрана, можно отметить её галочкой
         button_text = "✅" if index in chosen else str(index)
-        text += f"{index}. {title} *[{count}]*\n"
+        text += f"{index}. {title} \n"
+        row.append(InlineKeyboardButton(
+            text=button_text,
+            callback_data=states.GroupCallback(
+                gen_id=index,
+                page=page,
+                chosen_id = chosen_id
+                ).pack()
+            ))
+
+        # Разбиваем ряды по 5 кнопок (можно настроить под себя)
+        if len(row) == 5:
+            builder.row(*row)
+            row = []
+    if row:
+        builder.row(*row)
+        builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
+
+    if chosen_id:
+        builder.row(InlineKeyboardButton(
+            text="Сгенерировать новость",
+            callback_data=states.GenerateCallback(chosen_id=chosen_id).pack()
+            ))
+        builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
+
+
+    await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
+    await message.delete()
+
+@dp.callback_query(states.GroupCallback.filter())
+async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: states.GroupCallback):
+
+    page = callback_data.page
+    gen_id = callback_data.gen_id
+    print (gen_id)
+    user_id = callback.from_user.id
+
+    chosen_id = callback_data.chosen_id
+    print (f"send_sub_topics_page {chosen_id}")
+
+    chosen_id_list = chosen_id.split(",")
+    chosen_id_list = [int(x) for x in chosen_id_list if x.isdigit()]
+
+
+    gen_title = editabs.get_top(user_id, gen_id=gen_id)
+    title_df = pandas.DataFrame(gen_title)
+    gen_title = title_df['title'].to_list()
+    print (gen_title)
+    gen_title = ",".join(gen_title)
+
+
+    history = editabs.get_subtop(user_id, gen_id)
+    df = pandas.DataFrame(history)
+    counts = df['title'].value_counts()
+    count_dict = counts.to_dict()
+    all_dict = len(counts)
+
+    # id_sub_titles = editabs.get_subtop(user_id, gen_id)
+    # id_df = pandas.DataFrame(id_sub_titles)
+    # id_list = id_df['id'].to_list()
+
+    grouped_ids = df.groupby('title')['subtopic_id'].apply(list).to_dict()
+
+
+    page_size = 10
+    total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
+
+    start_idx = page * page_size
+    end_idx = start_idx + page_size
+    topics_page = list(count_dict.items())[start_idx:start_idx + page_size]
+    print(topics_page)
+
+    text = (f"*{gen_title}:*\n"
+            "_В скобках указано сколько раз темы повторилась в разных каналах_\n\n"
+            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n"
+            f"Всего тем: {all_dict}\n\n")
+
+    builder = InlineKeyboardBuilder()
+    row = []
+
+    # Формируем кнопки для каждой темы на текущей странице
+    for local_index, (subtopic_title, count) in enumerate(topics_page):
+        display_number = local_index + 1  # Последовательный номер для отображения
+        # Получаем список фактических id для этой темы
+        actual_ids = grouped_ids.get(subtopic_title, [])
+        # Объединяем их в строку, разделённую запятыми
+        actual_id = actual_ids[0] if actual_ids else 0
+        # Отображаем галочку, если фактический id уже выбран, иначе показываем порядковый номер
+        button_text = f"✅ {display_number}" if actual_id in chosen_id_list  else str(display_number)
+        text += f"{display_number}. {subtopic_title} *[{count}]*\n"
         row.append(InlineKeyboardButton(
             text=button_text,
             callback_data=states.ChooseCallback(
-                n=index,
+                n=actual_id,  # фактический id подтемы
                 c=len(count_dict),
-                ch=",".join(map(str, chosen)),
-                page=page
-            ).pack()
-        ))
-        # Разбиваем ряды по 5 кнопок (можно настроить под себя)
+                chosen_id=chosen_id,  # все фактические id для этой подтемы
+                page=page,
+                gen_id=gen_id
+                ).pack()
+            ))
         if len(row) == 5:
             builder.row(*row)
             row = []
@@ -95,7 +186,8 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
             text="Назад",
             callback_data=states.NumberPageCallback(
                 page=page - 1,
-                choose=",".join(map(str, chosen))
+                chosen_id=chosen_id,
+                gen_id=gen_id
             ).pack()
         ))
     if page < total_pages - 1:
@@ -103,81 +195,105 @@ async def send_topics_page(message, count_dict, page=0, chosen=None):
             text="Вперёд",
             callback_data=states.NumberPageCallback(
                 page=page + 1,
-                choose=",".join(map(str, chosen))
+                chosen_id=chosen_id,
+                gen_id = gen_id
             ).pack()
         ))
     if navigation_buttons:
         builder.row(*navigation_buttons)
 
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
+     # Добавляем кнопку для возврата к глобальным темам
+    builder.row(InlineKeyboardButton(
+        text="Назад к глобальным темам",
+        callback_data=states.BackCallback(chosen_id=chosen_id).pack()
+        ))
+    # builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
 
-    await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
-    await message.delete()
+    # text = processing.escape_markdown(text)
+
+    await callback.message.edit_text(text = text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
 
 
 
-selected_topics_per_user = {}
+
 
 @dp.callback_query(states.NumberPageCallback.filter())
 async def navigate_page(callback: types.CallbackQuery, callback_data: states.NumberPageCallback):
     new_page = callback_data.page
 
     # Преобразуем строку с выбранными темами в список целых чисел
-    chosen = [int(x) for x in callback_data.choose.split(",") if x]
+    chosen_id = callback_data.chosen_id
+
+    gen_id  = callback_data.gen_id
+
+    page = callback_data.page
+
+    chosen_id_list = chosen_id.split(",")
+    chosen_id_list = [int(x) for x in chosen_id_list if x.isdigit()]
 
     user_id = callback.from_user.id
-    history= editabs.get_chat_history(user_id, role="assistant")
-    if not history:
-        await bot.send_message(
-            chat_id=user_id,
-            text="А тем нет:(",
-            reply_markup=buttons.parse_sevendays()
-        )
-        return
 
+    gen_title = editabs.get_top(user_id, gen_id=gen_id)
+    title_df = pandas.DataFrame(gen_title)
+    gen_title = title_df['title'].to_list()
+    print(gen_title)
+    gen_title = ",".join(gen_title)
+
+    history = editabs.get_subtop(user_id, gen_id)
     df = pandas.DataFrame(history)
-    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
     counts = df['title'].value_counts()
     count_dict = counts.to_dict()
     all_dict = len(counts)
 
+    grouped_ids = df.groupby('title')['subtopic_id'].apply(list).to_dict()
+
     page_size = 10
     total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
-    start_idx = new_page * page_size
+    start_idx = page * page_size
     topics_page = list(count_dict.items())[start_idx:start_idx + page_size]
+
+    text = (
+        f"*{gen_title}:*\n"
+         "_В скобках указано сколько раз темы повторилась в разных каналах_\n\n"
+        "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n"
+        f"Всего тем: {all_dict}\n\n")
+
 
     builder = InlineKeyboardBuilder()
     row = []
-    text = ("*Вот темы, о которых говорили за прошлую неделю:*\n"
-            "_В скобках указано сколько раз эта тема повторилась в разных каналах_\n\n"
-            "_Выберите на клавиатуре номера тем, по которым нужно сгенерировать новость_\n\n"
-            f"Всего тем: {all_dict}\n\n")
 
-
-    for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
-        # Если тема выбрана, можно отметить её галочкой
-        button_text = "✅" if index in chosen else str(index)
-        text += f"{index}. {title} *[{count}]*\n"
+    for local_index, (subtopic_title, count) in enumerate(topics_page):
+        display_number = local_index + 1
+        actual_ids = grouped_ids.get(subtopic_title, [])
+        actual_id = actual_ids[0] if actual_ids else 0
+        # Отображаем галочку, если выбран фактический id
+        button_text = f"✅ {display_number}" if actual_id in chosen_id_list else str(display_number)
+        text += f"{display_number}. {subtopic_title} *[{count}]*\n"
         row.append(InlineKeyboardButton(
             text=button_text,
             callback_data=states.ChooseCallback(
-                n=index,
+                n=actual_id,
                 c=len(count_dict),
-                ch=",".join(map(str, chosen)),
-                page=new_page
+                chosen_id=",".join(map(str, chosen_id_list)),
+                page=page,
+                gen_id=gen_id
                 ).pack()
             ))
-        # Разбиваем ряды по 5 кнопок (можно настроить под себя)
         if len(row) == 5:
             builder.row(*row)
             row = []
     if row:
         builder.row(*row)
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
-    if chosen:
+
+    updated_chosen_str = ",".join(map(str, chosen_id_list))
+
+    # builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
+
+
+    if updated_chosen_str:
         builder.row(InlineKeyboardButton(
             text="Сгенерировать новость",
-            callback_data=states.GenerateCallback(choose=",".join(map(str, chosen))).pack()
+            callback_data=updated_chosen_str
         ))
 
     navigation_buttons = []
@@ -186,7 +302,8 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
             text="Назад",
             callback_data=states.NumberPageCallback(
                 page=new_page - 1,
-                choose=",".join(map(str, chosen))
+                chosen_id=updated_chosen_str,
+                gen_id = gen_id
             ).pack()
         ))
     if new_page < total_pages - 1:
@@ -194,11 +311,19 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
             text="Вперёд",
             callback_data=states.NumberPageCallback(
                 page=new_page + 1,
-                choose=",".join(map(str, chosen))
+                chosen_id=updated_chosen_str,
+                gen_id=gen_id
+
             ).pack()
         ))
     if navigation_buttons:
         builder.row(*navigation_buttons)
+
+        # Добавляем кнопку для возврата к глобальным темам
+    builder.row(InlineKeyboardButton(
+        text="Назад к глобальным темам",
+        callback_data=states.BackCallback(chosen_id=chosen_id).pack()
+        ))
 
     await callback.message.edit_text(
         text=text,
@@ -207,13 +332,22 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
     )
 
 
+
 # Обработчик выбора темы (callback_data формируется через states.ChooseCallback)
 @dp.callback_query(states.ChooseCallback.filter())
-async def add_topic_request(callback: types.CallbackQuery,  callback_data = states.ChooseCallback):
+async def add_topic_request(callback: types.CallbackQuery,  callback_data: states.ChooseCallback):
+
+    chosen_id_str = callback_data.chosen_id
+    chosen_id_list = [int(x) for x in chosen_id_str.split(",") if x.strip().isdigit()]
+    print( f"add_topic_request {chosen_id_list}")
+
+    gen_id = callback_data.gen_id
     page = callback_data.page
     user_id = callback.from_user.id
-    history = editabs.get_chat_history(user_id, role="assistant")
-    chann = editabs.get_user_channels(user_id)
+
+    history = editabs.get_subtop(user_id,gen_id)
+
+
     if not history:
         await bot.send_message(
             chat_id=user_id,
@@ -221,58 +355,76 @@ async def add_topic_request(callback: types.CallbackQuery,  callback_data = stat
             reply_markup=buttons.parse_sevendays()
         )
 
-
     df = pandas.DataFrame(history)
-    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
     counts = df['title'].value_counts()
     count_dict = counts.to_dict()
+    grouped_ids = df.groupby('title')['subtopic_id'].apply(list).to_dict()
 
+    # Определяем выбранный фактический id из нажатой кнопки
+    chosen_subtopic_id = callback_data.n
+    print("Нажатый фактический id:", chosen_subtopic_id)
 
-    if user_id not in selected_topics_per_user:
-        selected_topics_per_user[user_id] = []
-    chosen = selected_topics_per_user[user_id]
-
-    # Переключение выбора темы
-    if callback_data.n in chosen:
-        chosen.remove(callback_data.n)
+    # Переключаем выбор: если уже выбран, удаляем; иначе добавляем (лимит 5)
+    if chosen_subtopic_id in chosen_id_list:
+        chosen_id_list.remove(chosen_subtopic_id)
     else:
-        if len(chosen) >= 5:
-            await callback.answer(text="Максимальное количество тем - 5")
+        if len(chosen_id_list) >= 5:
+            await callback.answer("Максимальное количество тем - 5", show_alert=True)
             return
-        chosen.append(callback_data.n)
-    selected_topics_per_user[user_id] = chosen
+        chosen_id_list.append(chosen_subtopic_id)
+    # Обновляем строковое представление выбранных id
+    print("Обновлённый список выбранных id:", chosen_id_list)
+
 
     page_size = 10
     total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
     start_idx = page * page_size
     topics_page = list(count_dict.items())[start_idx:start_idx + page_size]
 
+    text = (
+        f"*{', '.join(title for title in df['title'].unique())}:*\n"
+        "_В скобках указано, сколько раз тема повторилась_\n\n"
+        "_Выберите номер подтемы для генерации новости_\n\n"
+        f"Всего подтем: {len(count_dict)}\n\n"
+    )
+
     builder = InlineKeyboardBuilder()
     row = []
-    for index, (title, count) in enumerate(topics_page, start=start_idx + 1):
-        # Если тема выбрана, можно отметить её галочкой
-        button_text = "✅" if index in chosen else str(index)
+
+    for local_index, (subtopic_title, count) in enumerate(topics_page):
+        display_number = local_index + 1
+        actual_ids = grouped_ids.get(subtopic_title, [])
+        actual_id = actual_ids[0] if actual_ids else 0
+        # Отображаем галочку, если выбран фактический id
+        button_text = f"✅ {display_number}" if actual_id in chosen_id_list else str(display_number)
+        text += f"{display_number}. {subtopic_title} *[{count}]*\n"
         row.append(InlineKeyboardButton(
             text=button_text,
             callback_data=states.ChooseCallback(
-                n=index,
+                n=actual_id,
                 c=len(count_dict),
-                ch=",".join(map(str, chosen)),
-                page=page
+                chosen_id=",".join(map(str, chosen_id_list)),
+                page=page,
+                gen_id=gen_id
                 ).pack()
             ))
-        # Разбиваем ряды по 5 кнопок (можно настроить под себя)
         if len(row) == 5:
             builder.row(*row)
             row = []
     if row:
         builder.row(*row)
-    builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
 
-    if chosen:
+    updated_chosen_str = ",".join(map(str, chosen_id_list))
+
+    print(chosen_id_list)
+    # builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
+    # Добавляем кнопку для возврата к глобальным темам
+
+
+    if updated_chosen_str:
         builder.row(InlineKeyboardButton(
             text="Сгенерировать новость",
-            callback_data=states.GenerateCallback(choose=",".join(map(str, chosen))).pack()
+            callback_data=states.GenerateCallback(chosen_id=updated_chosen_str).pack()
         ))
 
     navigation_buttons = []
@@ -281,7 +433,8 @@ async def add_topic_request(callback: types.CallbackQuery,  callback_data = stat
             text="Назад",
             callback_data=states.NumberPageCallback(
                 page=page - 1,
-                choose=",".join(map(str, chosen))
+                chosen_id=",".join(map(str, chosen_id_list)),
+                gen_id = gen_id
                 ).pack()
             ))
     if page < total_pages - 1:
@@ -289,11 +442,17 @@ async def add_topic_request(callback: types.CallbackQuery,  callback_data = stat
             text="Вперёд",
             callback_data=states.NumberPageCallback(
                 page=page + 1,
-                choose=",".join(map(str, chosen))
+                chosen_id=",".join(map(str, chosen_id_list)),
+                gen_id = gen_id
                 ).pack()
             ))
     if navigation_buttons:
         builder.row(*navigation_buttons)
+
+    builder.row(InlineKeyboardButton(
+        text="Назад к глобальным темам",
+        callback_data=states.BackCallback(chosen_id=updated_chosen_str).pack()
+        ))
 
 
     await callback.message.edit_text(
@@ -302,15 +461,31 @@ async def add_topic_request(callback: types.CallbackQuery,  callback_data = stat
             reply_markup=builder.as_markup()
         )
 
+@dp.callback_query(states.BackCallback.filter())
+async def back_to_groups(callback: types.CallbackQuery, callback_data: states.BackCallback):
+    user_id = callback.from_user.id
+    chosen_id = callback_data.chosen_id
+
+    print(f"back_to_groups {chosen_id}")
+    # Получаем глобальные темы для пользователя
+    history = editabs.get_top(user_id)
+    if not history:
+        await bot.send_message(chat_id=user_id, text="Глобальных тем нет или что-то сломалось")
+        return
+    df = pandas.DataFrame(history)
+    counts = df['title'].value_counts()
+    count_dict = counts.to_dict()
+    page = 0
+
+    await send_group_list(callback.message,user_id,chosen_id, count_dict, page=page)
+
 
 @dp.callback_query(aiogram.F.data == "cancel_choose")
 async def cancel_channel_request(callback: types.CallbackQuery):
-    user_id = callback.from_user.id
     await callback.message.edit_text(
         text=callback.message.md_text,
         parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
         reply_markup=None)
-    selected_topics_per_user[user_id] = []
 
 
 
@@ -318,16 +493,17 @@ async def cancel_channel_request(callback: types.CallbackQuery):
 async def add_topic(callback: types.CallbackQuery):
     user_id = callback.from_user.id
     callback_data = states.GenerateCallback.unpack(callback.data)
-    chosen = [int(x) for x in callback_data.choose.split(',') if x]
+    chosen = callback_data.chosen_id
     print (chosen)
-    history = editabs.get_chat_history(user_id, role="assistant")
+    history = editabs.get_selected_subtopics(user_id, chosen)
     df = pandas.DataFrame(history)
-    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
-    counts = df['title'].value_counts().to_dict()
-    topics = list(counts.keys())
+    counts = df['title'].to_list()
+    # counts = ",".join(counts)
+    print (counts)
 
-    selected_topics = [topics[i - 1] for i in chosen if 0 <= i - 1 < len(topics)]
 
+
+    selected_topics = counts
     if not selected_topics:
         await callback.answer("Вы не выбрали ни одной темы!", show_alert=True)
         return
@@ -335,86 +511,115 @@ async def add_topic(callback: types.CallbackQuery):
         # Вызываем генерацию
     await news.generate_news(callback, selected_topics)
 
-    # После генерации сбрасываем выбранные темы для пользователя
-    selected_topics_per_user[user_id] = []
 
 
+async def top_themes(user_id):
+    """
+    Отправляет запрос в GPT для генерации 10 общих тем с вложенными подтемами.
+    Возвращает JSON со структурой {id: {общая_тема, подтемы}}.
+    """
+
+    history = editabs.get_chat_history(user_id, "assistant", title = 1)
+    gen_titles = editabs.get_top(user_id)
+
+    df  = pandas.DataFrame(history)
+    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
+    counts_dict = df.to_dict()
+
+    print (counts_dict)
 
 
-# @dp.callback_query(aiogram.F.data == "generate")
-# async def top_titles(callback_query, state: FSMContext):
-#     user_id = callback_query.from_user.id
-#     chat_id = callback_query.message.chat.id
-#     message_id = callback_query.message.message_id
-#
-#     history  = editabs.get_chat_history(user_id,role="assistant", title=1)
-#
-#     response = await openai_client.chat.completions.create(
-#         model="gpt-4o-mini",
-#         messages=[
-#             {"role": "system", "content": "Выяви из этих заголовков часто повторяющиеся. В ответе предоставь title и url"
-#              },
-#             {"role": "user", "content": f"Description: {history}\n\n Выяви из этих заголовков часто повторяющиеся и в ответе предоставь топ 5 по убыванию.  В ответе предоставь title и url"}
-#             ],
-#
-#         response_format={
-#             "type": "json_schema",
-#             "json_schema": {
-#                 "name": "titles",
-#                 "schema": {
-#                     "type": "object",
-#                     "properties": {
-#                         "topics": {
-#                             "type": "array",
-#                             "items": {
-#                                 "type": "object",
-#                                 "properties": {
-#                                     "id": {"type": "integer"},
-#                                     "title": {"type": "string"},
-#                                     "url": {"type": "string"}
-#                                     },
-#                                 "required": ["id", "title",  "url"],
-#                                 "additionalProperties": False
-#                                 }
-#                             }
-#                         },
-#                     "required": ["topics"],
-#                     "additionalProperties": False
-#                     },
-#                 "strict": True
-#                 }
-#             },
-#         temperature=0.4
-#         )
-#
-#     response_json = json.loads(response.choices[0].message.content)
-#
-#     topics_with_descriptions = json.dumps([
-#         {
-#             "id": topic.get("id"),
-#             "title": topic.get("title"),
-#             "url": topic.get("url"),
-#             "description": editabs.get_description_by_url(topic.get("url", "")) or "Описание не найдено"
-#             }
-#         for topic in response_json.get("topics", [])
-#         ], ensure_ascii=False, indent=4)
-#
-#
-#     json_news = json.loads(topics_with_descriptions)
-#
-#     news = processing.escape_markdown_v2(json_news)
-#
-#     await state.update_data(news=json_news, message_id=message_id)
-#
-#     # await send_long_message(chat_id=callback_query.message.chat.id, text=f"{news}\n\n[Изображение статьи]({image_url})", bot=callback_query.bot, reply_markup=get_inline_keyboard2())
-#     await bot.edit_message_text(chat_id=chat_id,
-#                                 message_id=message_id, text=news, parse_mode="MarkdownV2", reply_markup=buttons.get_delete_keyboard(json_news), disable_web_page_preview=True)
-#
+    prompt = (
+        f"Создай список из 10 глобальных IT-тем на основе этих тем {counts_dict}\n"
+        f"Посмотри на эти {gen_titles} и сопоставь придуманные тобой темы с темами и подтемами уже созданными"
+        f"Лучше анализируй и группируй темы!"
+        f"Не перезаписывай мои старые темы, это ломает мне базу данных. Ты можешь только добавлять"
+        f"Если уже есть основная тема и она подходит, то ни в коем случае не создавай новую - пользуйся той, что уже есть"
+        f"Если подтему можно добавить в уже существующую тему - сделай это"
+        "Для каждой общей темы:\n"
+        "- Дай уникальный `id`, начиная с 1.\n"
+        "- Название общей темы НИКОГДА НЕ ДОЛЖНО ПОВТОРЯТЬСЯ (`title`).\n"
+        f"- Дай список подтем (`subtopics`):\n"
+        f"То есть ты сначала формируешь глобальные темы на основе всего словаря который я тебе присылаю, а затем добавляешь подтемы"
+        f"В уже созданные тобой глобальные темы"
+        "  - Имеет `id`, связанный с общей темой (например, если `id` общей темы = 1, то её подтемы могут быть 101, 102, 103).\n"
+        "  - Имеет название `title`.\n\n"
+        "Ответ верни **в формате JSON** с ключами `topics`, вложенность должна быть строгой.\n"
+        "Пример JSON:\n"
+        "{\n"
+        '  "topics": [\n'
+        '    { "id": 1, "title": "Искусственный интеллект", "subtopics": [\n'
+        '      { "id": 101, "title": "Обработка естественного языка" },\n'
+        '      { "id": 102, "title": "Компьютерное зрение" }\n'
+        "    ] },\n"
+        "    { \"id\": 2, \"title\": \"Кибербезопасность\", \"subtopics\": [\n"
+        "      { \"id\": 201, \"title\": \"Шифрование данных\" },\n"
+        "      { \"id\": 202, \"title\": \"Атаки на нейросети\" }\n"
+        "    ] }\n"
+        "  ]\n"
+        "}"
+    )
+
+    response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "Ты создаёшь структурированные IT-темы для базы данных."},
+            {"role": "user", "content": prompt}
+            ],
+        response_format={
+            "type": "json_schema",
+            "json_schema": {
+                "name": "topic_hierarchy",
+                "schema": {
+                    "type": "object",
+                    "properties": {
+                        "topics": {
+                            "type": "array",
+                            "items": {
+                                "type": "object",
+                                "properties": {
+                                    "id": {"type": "integer"},
+                                    "title": {"type": "string"},
+                                    "subtopics": {
+                                        "type": "array",
+                                        "items": {
+                                            "type": "object",
+                                            "properties": {
+                                                "id": {"type": "integer"},
+                                                "title": {"type": "string"}
+                                                },
+                                            "required": ["id", "title"],
+                                            "additionalProperties": False
+                                            }
+                                        }
+                                    },
+                                "required": ["id", "title", "subtopics"]
+                                }
+                            }
+                        },
+                    "strict": True
+                    }
+                }
+            },
+        temperature=0.4
+        )
+
+
+    response_json = json.loads(response.choices[0].message.content)
+
+    print (response_json)
+
+    editabs.save_top_subtop(response_json, user_id)
+
+    return response_json
+
+
 
 @dp.callback_query(aiogram.F.data == "parse_sevendays")
 async def manual_parse(callback_query: types.CallbackQuery):
 
     chat_id = callback_query.message.chat.id
+
     await bot.send_message(chat_id=chat_id, text = "Я начал собирать посты с добавленных каналов за 7 дней")
 
     print(chat_id)
@@ -449,10 +654,93 @@ async def manual_parse(callback_query: types.CallbackQuery):
 
             chat_messages = chat.MessageHistory().add_message(
                 role=chat.Message.ROLE_SYSTEM,
-                content=f"Ты получишь текст поста, твоя задача выделить основную тему для него, она должна"
+                content=f"Ты получишь текст поста, твоя задача выделить основную тему для него"
+                        f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту новости, "
                         f"НЕ ИСПОЛЬЗУЙ НИКАКИЕ ЗНАКИ ПРЕПИНАНИЯ"
-                        f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту, "
-                        f"придумывай подробную тему.\nЕсть список уже существующих тем: {history}.\n"
+                        f"Посты с #Реклама игнорируй"
+                        f"придумывай подробную тему и уникальную тему.\nЕсть список уже существующих тем: {history}.\n"
+                        f"Если текст поста подходит под одну из этих тем, то есть содержит в себе такие же конкретные сущности о которых идет речь  - выбери ее, а не придумывай новую."
+                        f"Если пост отличается от темы, придумай новую."
+                        f"НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ.\n\n"
+                        f"ТЕМА ДОЛЖНА ОТНОСИТЬСЯ К СФЕРЕ НЕЙРОННЫХ СЕТЕЙ, ИСКУССТВЕННОГО ИНТЕЛЛЕКТА И ПОДОБНОГО. "
+                        f"ЕСЛИ ПОСТ НЕ ОТНОСИТСЯ К ЭТОЙ ТЕМАТИКЕ, ВЕРНИ ТЕМУ С НАЗВАНИЕМ 'НЕ ПО ТЕМЕ'").add_message(
+                role=chat.Message.ROLE_USER,
+                content=f"{description['message']}")
+
+            response = await openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=chat_messages.to_api_format(),
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "titles",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "title": {"type": "string"}
+                            },
+                            "required": ["title"],
+                            "additionalProperties": False
+                            },
+                        "strict": True
+                        }
+                    },
+                temperature=0.4
+                )
+
+            response_json = json.loads(response.choices[0].message.content)
+
+
+            topic_id = 1
+            title = response_json.get("title").strip()
+            text = description['message']
+            url = description['link']
+
+
+
+            editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
+            print(chat_id)
+
+            print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
+
+    await top_themes(chat_id)
+    await  bot.send_message(chat_id, text="Я закончил")
+
+
+async def gen_titles_for_titles(channel_link, chat_id):
+    await bot.send_message(chat_id, text = f"Я начал собирать посты с {channel_link} за 7 дней", disable_web_page_preview=True)
+    messages = await tg_parse.parse(channel_link, days=7)
+    if isinstance(messages, str):
+        await bot.send_message(chat_id, messages)
+        return
+    else:
+        seen_messages = set()
+        selected_description = []
+
+        for msg in messages:
+            if not msg.message.strip():
+                continue
+
+            link = f"{channel_link}/{msg.id}"
+            # msg.message = await processing.compress_text(msg.message)
+            if msg.message not in seen_messages:
+                seen_messages.add(msg.message)
+                selected_description.append({
+                    "message": msg.message,
+                    "link": link
+                    })
+
+        for description in selected_description:
+
+            history = editabs.get_chat_history(chat_id, role ="assistant", title=1)
+
+            chat_messages = chat.MessageHistory().add_message(
+                role=chat.Message.ROLE_SYSTEM,
+                content=f"Ты получишь текст поста, твоя задача выделить основную тему для него"
+                        f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту новости, "
+                        f"НЕ ИСПОЛЬЗУЙ НИКАКИЕ ЗНАКИ ПРЕПИНАНИЯ"
+                        f"Посты с #Реклама игнорируй"
+                        f"придумывай подробную тему и уникальную тему.\nЕсть список уже существующих тем: {history}.\n"
                         f"Если текст поста подходит под одну из этих тем, то есть содержит в себе такие же конкретные сущности о которых идет речь  - выбери ее, а не придумывай новую."
                         f"Если пост отличается от темы, придумай новую."
                         f"НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ.\n\n"
@@ -490,81 +778,9 @@ async def manual_parse(callback_query: types.CallbackQuery):
             text = description['message']
             url = description['link']
             editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
+            print (chat_id)
 
             print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
+
+    await top_themes(chat_id)
     await  bot.send_message(chat_id, text="Я закончил")
-
-
-async def gen_titles_for_titles(channel_link, chat_id):
-    await bot.send_message(chat_id, text = "Я начал собирать посты с добавленных каналов за 7 дней")
-    messages = await tg_parse.parse(channel_link, days=7)
-    if isinstance(messages, str):
-        await bot.send_message(chat_id, messages)
-        return
-    else:
-        seen_messages = set()
-        selected_description = []
-
-        for msg in messages:
-            if not msg.message.strip():
-                continue
-
-            link = f"{channel_link}/{msg.id}"
-            # msg.message = await processing.compress_text(msg.message)
-            if msg.message not in seen_messages:
-                seen_messages.add(msg.message)
-                selected_description.append({
-                    "message": msg.message,
-                    "link": link
-                    })
-
-    for description in selected_description:
-
-        history = editabs.get_chat_history(chat_id, role ="assistant", title=1)
-
-        chat_messages = chat.MessageHistory().add_message(
-            role=chat.Message.ROLE_SYSTEM,
-            content=f"Ты получишь текст поста, твоя задача выделить основную тему для него, она должна"
-                    f"НЕ ИСПОЛЬЗУЙ НИКАКИЕ ЗНАКИ ПРЕПИНАНИЯ"
-                    f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту, "
-                    f"придумывай подробную тему.\nЕсть список уже существующих тем: {history}.\n"
-                    f"Если текст поста подходит под одну из этих тем, то есть содержит в себе такие же конкретные сущности о которых идет речь  - выбери ее, а не придумывай новую."
-                    f"Если пост отличается от темы, придумай новую."
-                    f"НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ.\n\n"
-                    f"ТЕМА ДОЛЖНА ОТНОСИТЬСЯ К СФЕРЕ НЕЙРОННЫХ СЕТЕЙ, ИСКУССТВЕННОГО ИНТЕЛЛЕКТА И ПОДОБНОГО. "
-                    f"ЕСЛИ ПОСТ НЕ ОТНОСИТСЯ К ЭТОЙ ТЕМАТИКЕ, ВЕРНИ ТЕМУ С НАЗВАНИЕМ 'НЕ ПО ТЕМЕ'").add_message(
-            role=chat.Message.ROLE_USER,
-            content=f"{description['message']}")
-
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=chat_messages.to_api_format(),
-            response_format={
-                "type": "json_schema",
-                "json_schema": {
-                    "name": "titles",
-                    "schema": {
-                        "type": "object",
-                        "properties": {
-                            "title": {"type": "string"}
-                        },
-                        "required": ["title"],
-                        "additionalProperties": False
-                        },
-                    "strict": True
-                    }
-                },
-            temperature=0.4
-            )
-
-        response_json = json.loads(response.choices[0].message.content)
-
-
-        topic_id = 1
-        title = response_json.get("title").strip()
-        text = description['message']
-        url = description['link']
-        editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
-
-        print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
-

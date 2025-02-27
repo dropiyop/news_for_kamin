@@ -13,10 +13,24 @@ def get_connection():
 def init_db():
     conn = get_connection()
     cursor = conn.cursor()
+    #
+    # cursor.execute("""
+    #     DROP TABLE generalized_topics
+    #     """)
+    #
+    # cursor.execute("""
+    #         DROP TABLE subtopics
+    #         """)
+    #
+    # cursor.execute("""
+    #                 DROP TABLE chat_history
+    #                 """)
 
     # cursor.execute("""
-    #     DROP TABLE user_channels
-    #     """)
+    #         DROP TABLE user_channels
+    #         """)
+    #
+
 
     # Таблица для хранения каналов пользователей
     cursor.execute("""
@@ -25,15 +39,6 @@ def init_db():
             channel TEXT,
             channel_name TEXT,
             PRIMARY KEY (user_id, channel)
-        )
-    """)
-
-    # Таблица для хранения использованных заголовков
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS used_titles (
-            user_id INTEGER,
-            title TEXT,
-            PRIMARY KEY (user_id, title)
         )
     """)
 
@@ -53,7 +58,7 @@ def init_db():
     cursor.execute("PRAGMA table_info(init_clients)")
     columns = [row[1] for row in cursor.fetchall()]
 
-    # Если `chat_id` отсутствует — добавляе
+    # Если `chat_id` отсутствует — добавляем
     if "chat_id" not in columns:
         cursor.execute("ALTER TABLE init_clients ADD COLUMN chat_id INTEGER")
 
@@ -70,6 +75,32 @@ def init_db():
         url TEXT
     )
     """)
+
+
+    # Таблица общих тем
+    cursor.execute("""
+            CREATE TABLE IF NOT EXISTS generalized_topics (
+            global_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id INTEGER NOT NULL,
+            topic_id INTEGER NOT NULL, 
+            title TEXT NOT NULL,                  
+            UNIQUE(user_id, topic_id)                     
+
+           )
+       """)
+
+    # Таблица подтем
+    cursor.execute("""
+           CREATE TABLE IF NOT EXISTS subtopics (
+               global_id INTEGER PRIMARY KEY AUTOINCREMENT,
+               subtopic_id  INTEGER  NOT NULL,
+               user_id INTEGER NOT NULL,
+               title TEXT NOT NULL,
+               general_topic_id INTEGER  NOT NULL,  -- ID общей темы (связь)
+               FOREIGN KEY (general_topic_id) REFERENCES generalized_topics(topic_id)
+           )
+       """)
+
 
 
 
