@@ -10,7 +10,7 @@ from handlers import processing
 import chat
 import  apscheduler.schedulers.asyncio
 import apscheduler.triggers.cron
-
+import pandas
 
 async def shedule_title():
 
@@ -19,7 +19,7 @@ async def shedule_title():
     print(user_ids)
 
     for user_id in user_ids:
-
+        print(user_id)
         channels = editabs.get_user_url_channel(user_id)
 
         channels = [channel[0] for channel in channels]
@@ -52,19 +52,28 @@ async def shedule_title():
             for description in selected_description:
 
                 history = editabs.get_chat_history(user_id, role ="assistant", title=1)
+                df = pandas.DataFrame(history)
+
+                if 'title' in df.columns:
+                    counts = df['title'].unique()
+                else:
+                    counts = []
+
+                print(counts)
 
                 chat_messages = chat.MessageHistory().add_message(
                     role=chat.Message.ROLE_SYSTEM,
-                    content=f"Ты получишь текст поста, твоя задача выделить основную тему для него"
-                            f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту новости, "
-                            f"НЕ ИСПОЛЬЗУЙ НИКАКИЕ ЗНАКИ ПРЕПИНАНИЯ"
-                            f"Посты с #Реклама игнорируй"
-                            f"придумывай подробную тему и уникальную тему.\nЕсть список уже существующих тем: {history}.\n"
-                            f"Если текст поста подходит под одну из этих тем, то есть содержит в себе такие же конкретные сущности о которых идет речь  - выбери ее, а не придумывай новую."
-                            f"Если пост отличается от темы, придумай новую."
-                            f"НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ.\n\n"
-                            f"ТЕМА ДОЛЖНА ОТНОСИТЬСЯ К СФЕРЕ НЕЙРОННЫХ СЕТЕЙ, ИСКУССТВЕННОГО ИНТЕЛЛЕКТА И ПОДОБНОГО. "
-                            f"ЕСЛИ ПОСТ НЕ ОТНОСИТСЯ К ЭТОЙ ТЕМАТИКЕ, ВЕРНИ ТЕМУ С НАЗВАНИЕМ 'НЕ ПО ТЕМЕ'").add_message(
+                    content=f"Твоя задача - определить основную тему поста о нейронных сетях и искусственном интеллекте. \n" \
+                            f"Тема должна отражать конкретные сущности, о которых идет речь в тексте, анализируй весь контент, а не только первые слова, \n" \
+                            f"НЕ ИСПОЛЬЗУЙ ЗНАКИ ПРЕПИНАНИЯ, избегай слов-клише 'Новое', 'Оптимизация', 'Улучшения', 'Обновления', \n" \
+                            f"формулируй подробную  тему. Если в новости упоминается конкретный продукт, группируй их в одну тему. \n" \
+                            f"Примеры хороших тем: 'Улучшения в нейросетевых моделях на примере GPT-4.5', 'Тренды и навыки в ML-инженерии на 2025 год', \n" \
+                            f"'Интеграция ChatGPT в образовательные учреждениях для учеников старших классов'. \n" \
+                            f"Игнорируй посты с хэштегом #Реклама, НЕ анализируй тексты короче 50 символов, \n" \
+                            f"если пост не относится к ИИ или нейросетям, верни 'НЕ ПО ТЕМЕ'. \n" \
+                            f"Сверься со списком существующих тем: {counts}, \n" \
+                            f"если текст подходит под существующую тему (содержит те же сущности или упоминает тот же продукт), используй ее, \n" \
+                            f"если текст значительно отличается, создай новую тему.").add_message(
                     role=chat.Message.ROLE_USER,
                     content=f"{description['message']}")
 
@@ -108,20 +117,37 @@ async def shedule_title():
 
 
 def prepare_schedulers():
-    scheduler = apscheduler.schedulers.asyncio.AsyncIOScheduler()
+    scheduler_parse = apscheduler.schedulers.asyncio.AsyncIOScheduler()
 
-    scheduler.add_job(
+    scheduler_parse.add_job(
         shedule_title,
         apscheduler.triggers.cron.CronTrigger(hour=0, minute=3),
         misfire_grace_time=300,
+
         id="parse_channel"
     )
 
-    print(f"Планировщик запущен на каждый день 00:03")
+    print(f"Планировщик запущен на каждый день")
+    scheduler_parse.start()
 
-    scheduler.start()
 
-#
+def delete_history():
+    scheduler_delete = apscheduler.schedulers.asyncio.AsyncIOScheduler()
+
+    scheduler_delete.add_job(
+        editabs.delete_all_history,
+        apscheduler.triggers.cron.CronTrigger(
+            day_of_week='sat',
+            hour=23,
+            minute=59,
+        ),
+        misfire_grace_time=300,
+        id="delete"
+    )
+
+    print(f"Планировщик удаления запущен на ближайшую субботу в 23:59")
+    scheduler_delete.start()
+
 # async def scheduled_task():
 #     print("Запускаю `shedule_title()` в 00:01...")
 #     await shedule_title()

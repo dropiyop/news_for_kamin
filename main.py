@@ -6,6 +6,7 @@ import asyncio
 
 async def main():
     shedule.prepare_schedulers()
+    shedule.delete_history()
     await dp.start_polling(bot, on_shutdown=shutdown_handler)
 
 if __name__ == "__main__":

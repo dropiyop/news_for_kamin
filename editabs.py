@@ -144,6 +144,18 @@ def delete_chat_history(user_id):
     conn.commit()
     conn.close()
 
+def delete_all_history():
+
+
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM chat_history")
+    cursor.execute("DELETE FROM generalized_topics")
+    cursor.execute("DELETE FROM subtopics")
+
+    conn.commit()
+    conn.close()
 
 
 def get_chat_history(user_id = None, role = None, title = None):
@@ -380,7 +392,10 @@ def get_description_by_url(url):
 
 # title="Эффективность ChatGPT в психотерапии и проблемы обновления голосовых помощников Siri и Alexa на базе генеративного ИИ"
 # topics_with_descriptions = {}
-# ff = get_descriptions_by_title(title)
+
+# ff = get_descriptions_by_title(title = "Создание и анимация 3D моделей с использованием нейросетевых технологий")
+# print (ff)
+
 # topics_with_descriptions.setdefault(title,ff)
 # print (topics_with_descriptions)
 #

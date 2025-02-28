@@ -4,6 +4,7 @@ from itertools import count
 
 import aiogram.enums
 from numpy.ma.core import choose
+from pandas.core.interchange.dataframe_protocol import DataFrame
 from urllib3 import proxy_from_url
 import editabs
 from init_client import *
@@ -37,8 +38,9 @@ async def button_channels(message: aiogram.types.Message) -> None:
 
         await send_group_list(message, user_id, chosen_id, counts_dict,page=0)
 
-
+user_chosen_themes = {}
 async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chosen=None):
+    global user_chosen_themes
     if chosen is None:
         chosen = []  # список выбранных тем
 
@@ -58,13 +60,33 @@ async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chose
     end_idx = start_idx + page_size
     topics_page = list(count_dict.items())[start_idx:end_idx]
 
+    # Если выбрана конкретная тема, получаем её подтемы
+    if chosen_id:
+        chosen_themes = editabs.get_selected_subtopics(user_id, chosen_id)
+
+        # Преобразуем в список заголовков
+        if chosen_themes:
+            df_themes = pandas.DataFrame(chosen_themes)
+            theme_titles = df_themes['title'].to_list()
+
+            # Обновляем словарь для этого пользователя
+            user_chosen_themes[user_id] = theme_titles
+        else:
+            # Если подтем нет, очищаем словарь для этого пользователя
+            user_chosen_themes[user_id] = []
+
+    # Получаем текущий список тем для отображения
+    if user_id in user_chosen_themes and user_chosen_themes[user_id]:
+        themes = ",\n\n".join(user_chosen_themes[user_id])
+    else:
+        themes = ""
 
 
     text = ("*Вот список обобщенных  тем, о которых говорили за прошлую неделю:*\n"
             "_Выбрав одну из тем - можно увидеть список подтем_\n\n"
             "_Выберите на клавиатуре номера тем_\n\n"
             f"Всего тем: {all_dict}\n\n"
-            f"Выбранные Вами  темы: {chosen_id}\n\n")
+            f"Выбранные Вами  темы: {themes}\n\n")
 
     builder = InlineKeyboardBuilder()
     row = []
@@ -96,7 +118,6 @@ async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chose
             text="Сгенерировать новость",
             callback_data=states.GenerateCallback(chosen_id=chosen_id).pack()
             ))
-        builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
 
 
     await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
@@ -125,16 +146,24 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
 
 
     history = editabs.get_subtop(user_id, gen_id)
-    df = pandas.DataFrame(history)
-    counts = df['title'].value_counts()
+    df_subtop = pandas.DataFrame(history)
+    counts = df_subtop['title'].value_counts()
     count_dict = counts.to_dict()
     all_dict = len(counts)
+    unique_topics = df_subtop['title'].unique()
 
-    # id_sub_titles = editabs.get_subtop(user_id, gen_id)
-    # id_df = pandas.DataFrame(id_sub_titles)
-    # id_list = id_df['id'].to_list()
+    history_count_themes = editabs.get_chat_history(user_id, role="assistant", title=1)
+    df_chat = pandas.DataFrame(history_count_themes)
+    count_history = df_chat['title'].value_counts().to_dict()
 
-    grouped_ids = df.groupby('title')['subtopic_id'].apply(list).to_dict()
+    history_counts = {}
+    for topic in unique_topics:
+        # Получаем количество появлений в истории чата (0, если тема не встречается)
+        history_counts[topic] = count_history.get(topic, 0)
+
+
+
+    grouped_ids = df_subtop.groupby('title')['subtopic_id'].apply(list).to_dict()
 
 
     page_size = 10
@@ -144,6 +173,7 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
     end_idx = start_idx + page_size
     topics_page = list(count_dict.items())[start_idx:start_idx + page_size]
     print(topics_page)
+
 
     text = (f"*{gen_title}:*\n"
             "_В скобках указано сколько раз темы повторилась в разных каналах_\n\n"
@@ -156,13 +186,14 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
     # Формируем кнопки для каждой темы на текущей странице
     for local_index, (subtopic_title, count) in enumerate(topics_page):
         display_number = local_index + 1  # Последовательный номер для отображения
+        frequency = history_counts.get(subtopic_title, 0)
         # Получаем список фактических id для этой темы
         actual_ids = grouped_ids.get(subtopic_title, [])
         # Объединяем их в строку, разделённую запятыми
         actual_id = actual_ids[0] if actual_ids else 0
         # Отображаем галочку, если фактический id уже выбран, иначе показываем порядковый номер
         button_text = f"✅ {display_number}" if actual_id in chosen_id_list  else str(display_number)
-        text += f"{display_number}. {subtopic_title} *[{count}]*\n"
+        text += f"{display_number}. {subtopic_title} *[{frequency}]*\n"
         row.append(InlineKeyboardButton(
             text=button_text,
             callback_data=states.ChooseCallback(
@@ -530,20 +561,21 @@ async def top_themes(user_id):
 
 
     prompt = (
-        f"Создай список из 10 глобальных IT-тем на основе этих тем {counts_dict}\n"
-        f"Посмотри на эти {gen_titles} и сопоставь придуманные тобой темы с темами и подтемами уже созданными"
-        f"Лучше анализируй и группируй темы!"
-        f"Не перезаписывай мои старые темы, это ломает мне базу данных. Ты можешь только добавлять"
+        f"Сделай список из 10 глобальных IT-тем и подтем ТОЛЬКО на основе этих тем из словаря {counts_dict}\n"
+        f"Если темы одинаковые, то выбери только одну"
+        f"НЕ ПРИДУМЫВАЙ ПОДТЕМЫ, используй только те, что есть. НЕЛЬЗЯ ПРИДУМЫВАТЬ ДРУГИЕ ПОДТЕМЫ"
+        f"У тебя есть только словарь с темами, не вздумай придумывать свои подтемы "
+        f"Группируй темы чтобы они как можно лучше соответствовали друг другу!"
+        f"В каждой глобальной теме должно быть минимум 3 подтем. Должны быть рассортированы все темы, даже если ты получил 100 тем"
+        f"То ты должен их все рассортировать"
         f"Если уже есть основная тема и она подходит, то ни в коем случае не создавай новую - пользуйся той, что уже есть"
         f"Если подтему можно добавить в уже существующую тему - сделай это"
-        "Для каждой общей темы:\n"
-        "- Дай уникальный `id`, начиная с 1.\n"
         "- Название общей темы НИКОГДА НЕ ДОЛЖНО ПОВТОРЯТЬСЯ (`title`).\n"
-        f"- Дай список подтем (`subtopics`):\n"
-        f"То есть ты сначала формируешь глобальные темы на основе всего словаря который я тебе присылаю, а затем добавляешь подтемы"
+        f"- Дай список подтем (`subtopics`)\n"
+        f"То есть ты сначала формируешь глобальные темы на основе всего словаря который я тебе присылаю, а затем добавляешь подтемы на основе того же словаря"
         f"В уже созданные тобой глобальные темы"
-        "  - Имеет `id`, связанный с общей темой (например, если `id` общей темы = 1, то её подтемы могут быть 101, 102, 103).\n"
-        "  - Имеет название `title`.\n\n"
+        # "- Имеет `id`, связанный с общей темой (например, если `id` общей темы = 1, то её подтемы могут быть 101, 102, 103).\n"
+        # "- Имеет название `title`.\n\n"
         "Ответ верни **в формате JSON** с ключами `topics`, вложенность должна быть строгой.\n"
         "Пример JSON:\n"
         "{\n"
@@ -601,7 +633,7 @@ async def top_themes(user_id):
                     }
                 }
             },
-        temperature=0.4
+        temperature=0.2
         )
 
 
@@ -648,22 +680,32 @@ async def manual_parse(callback_query: types.CallbackQuery):
                         "link": link
                         })
 
-        for description in selected_description:
 
+        for description in selected_description:
+            print(description)
             history = editabs.get_chat_history(chat_id, role ="assistant", title=1)
+            df = pandas.DataFrame(history)
+
+            if 'title' in df.columns:
+                counts = df['title'].unique()
+            else:
+                counts = []
+
+            print(counts)
 
             chat_messages = chat.MessageHistory().add_message(
                 role=chat.Message.ROLE_SYSTEM,
-                content=f"Ты получишь текст поста, твоя задача выделить основную тему для него"
-                        f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту новости, "
-                        f"НЕ ИСПОЛЬЗУЙ НИКАКИЕ ЗНАКИ ПРЕПИНАНИЯ"
-                        f"Посты с #Реклама игнорируй"
-                        f"придумывай подробную тему и уникальную тему.\nЕсть список уже существующих тем: {history}.\n"
-                        f"Если текст поста подходит под одну из этих тем, то есть содержит в себе такие же конкретные сущности о которых идет речь  - выбери ее, а не придумывай новую."
-                        f"Если пост отличается от темы, придумай новую."
-                        f"НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ.\n\n"
-                        f"ТЕМА ДОЛЖНА ОТНОСИТЬСЯ К СФЕРЕ НЕЙРОННЫХ СЕТЕЙ, ИСКУССТВЕННОГО ИНТЕЛЛЕКТА И ПОДОБНОГО. "
-                        f"ЕСЛИ ПОСТ НЕ ОТНОСИТСЯ К ЭТОЙ ТЕМАТИКЕ, ВЕРНИ ТЕМУ С НАЗВАНИЕМ 'НЕ ПО ТЕМЕ'").add_message(
+                content=f"Твоя задача - определить основную тему поста о нейронных сетях и искусственном интеллекте. \n"\
+                           f"Тема должна отражать конкретные сущности, о которых идет речь в тексте, анализируй весь контент, а не только первые слова, \n"\
+                           f"НЕ ИСПОЛЬЗУЙ ЗНАКИ ПРЕПИНАНИЯ, избегай слов-клише 'Новое', 'Оптимизация', 'Улучшения', 'Обновления', \n"\
+                           f"формулируй подробную  тему. Если в новости упоминается конкретный продукт, группируй их в одну тему. \n"\
+                           f"Примеры хороших тем: 'Улучшения в нейросетевых моделях на примере GPT-4.5', 'Тренды и навыки в ML-инженерии на 2025 год', \n"\
+                           f"'Интеграция ChatGPT в образовательные учреждениях для учеников старших классов'. \n"\
+                           f"Игнорируй посты с хэштегом #Реклама, НЕ анализируй тексты короче 50 символов, \n"\
+                           f"если пост не относится к ИИ или нейросетям, верни 'НЕ ПО ТЕМЕ'. \n"\
+                           f"Сверься со списком существующих тем: {counts}, \n"\
+                           f"если текст подходит под существующую тему (содержит те же сущности или упоминает тот же продукт), используй ее, \n"\
+                           f"если текст значительно отличается, создай новую тему.").add_message(
                 role=chat.Message.ROLE_USER,
                 content=f"{description['message']}")
 
@@ -733,19 +775,28 @@ async def gen_titles_for_titles(channel_link, chat_id):
         for description in selected_description:
 
             history = editabs.get_chat_history(chat_id, role ="assistant", title=1)
+            df = pandas.DataFrame(history)
+
+            if 'title' in df.columns:
+                counts = df['title'].unique()
+            else:
+                counts = []
+
+            print(counts)
 
             chat_messages = chat.MessageHistory().add_message(
                 role=chat.Message.ROLE_SYSTEM,
-                content=f"Ты получишь текст поста, твоя задача выделить основную тему для него"
-                        f"содержать в себе конкретные сущности о которых идет речь, выделяй тему не по первым словам, а по всему тексту новости, "
-                        f"НЕ ИСПОЛЬЗУЙ НИКАКИЕ ЗНАКИ ПРЕПИНАНИЯ"
-                        f"Посты с #Реклама игнорируй"
-                        f"придумывай подробную тему и уникальную тему.\nЕсть список уже существующих тем: {history}.\n"
-                        f"Если текст поста подходит под одну из этих тем, то есть содержит в себе такие же конкретные сущности о которых идет речь  - выбери ее, а не придумывай новую."
-                        f"Если пост отличается от темы, придумай новую."
-                        f"НИКОГДА НЕ АНАЛИЗИРУЙ НОВОСТИ ДЛИНА КОТОРЫХ МЕНЬШЕ 50 СИМВОЛОВ.\n\n"
-                        f"ТЕМА ДОЛЖНА ОТНОСИТЬСЯ К СФЕРЕ НЕЙРОННЫХ СЕТЕЙ, ИСКУССТВЕННОГО ИНТЕЛЛЕКТА И ПОДОБНОГО. "
-                        f"ЕСЛИ ПОСТ НЕ ОТНОСИТСЯ К ЭТОЙ ТЕМАТИКЕ, ВЕРНИ ТЕМУ С НАЗВАНИЕМ 'НЕ ПО ТЕМЕ'").add_message(
+                content=f"Твоя задача - определить основную тему поста о нейронных сетях и искусственном интеллекте. \n" \
+                        f"Тема должна отражать конкретные сущности, о которых идет речь в тексте, анализируй весь контент, а не только первые слова, \n" \
+                        f"НЕ ИСПОЛЬЗУЙ ЗНАКИ ПРЕПИНАНИЯ, избегай слов-клише 'Новое', 'Оптимизация', 'Улучшения', 'Обновления', \n" \
+                        f"формулируй подробную тему. Если в новости упоминается конкретный продукт, группируй их в одну тему. \n" \
+                        f"Примеры хороших тем: 'Улучшения в нейросетевых моделях на примере GPT-4.5', 'Тренды и навыки в ML-инженерии на 2025 год', \n" \
+                        f"'Интеграция ChatGPT в образовательные учреждениях для учеников старших классов'. \n" \
+                        f"Игнорируй посты с хэштегом #Реклама, НЕ анализируй тексты короче 50 символов, \n" \
+                        f"если пост не относится к ИИ или нейросетям, верни 'НЕ ПО ТЕМЕ'. \n" \
+                        f"Сверься со списком существующих тем: {counts}, \n" \
+                        f"если текст подходит под существующую тему (содержит те же сущности или упоминает тот же продукт), используй ее, \n" \
+                        f"если текст значительно отличается, создай новую тему.").add_message(
                 role=chat.Message.ROLE_USER,
                 content=f"{description['message']}")
 
@@ -767,7 +818,7 @@ async def gen_titles_for_titles(channel_link, chat_id):
                         "strict": True
                         }
                     },
-                temperature=0.4
+                temperature=0.2
                 )
 
             response_json = json.loads(response.choices[0].message.content)
