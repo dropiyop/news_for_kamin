@@ -10,7 +10,7 @@ import editabs
 from init_client import *
 from . import buttons, processing, tg_parse, news, channels
 from . import news as package_news
-# from handlers import processing, tg_parse, news
+from . import  processing
 from aiog import *
 import chat
 import pandas
@@ -119,8 +119,9 @@ async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chose
             callback_data=states.GenerateCallback(chosen_id=chosen_id).pack()
             ))
 
+    text = processing.convert_to_telegram_markdown(text)
 
-    await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
+    await message.answer(text, parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2, reply_markup=builder.as_markup())
     await message.delete()
 
 @dp.callback_query(states.GroupCallback.filter())
@@ -240,9 +241,9 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
         ))
     # builder.row(InlineKeyboardButton(text="Отмена", callback_data="cancel_choose"))
 
-    # text = processing.escape_markdown(text)
+    text = processing.convert_to_telegram_markdown(text)
 
-    await callback.message.edit_text(text = text, parse_mode=aiogram.enums.ParseMode.MARKDOWN, reply_markup=builder.as_markup())
+    await callback.message.edit_text(text = text, parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2, reply_markup=builder.as_markup())
 
 
 

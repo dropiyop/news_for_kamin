@@ -9,4 +9,14 @@ httpx-socks
 telethon
 httpx
 python-dotenv
-sqlite3
+pysqlite3
+pandas
+bs4
+requests
+apscheduler
+python-dotenv
+telethon
+asyncio
+httpx
+httpx_socks
+openai

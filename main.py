@@ -1,3 +1,5 @@
+#!/usr/bin/env python3.12
+
 from init_client import *
 from handlers import *
 from handlers import shedule
@@ -7,7 +9,9 @@ import asyncio
 async def main():
     shedule.prepare_schedulers()
     shedule.delete_history()
-    await dp.start_polling(bot, on_shutdown=shutdown_handler)
+    await dp.start_polling(bot,
+                           on_shutdown=shutdown_handler,
+                           drop_pending_updates=True)
 
 if __name__ == "__main__":
     try:

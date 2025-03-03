@@ -36,7 +36,7 @@ async def button_channels(message: aiogram.types.Message, state=None, text=None)
             reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Добавить канал", callback_data="add_channel")]]))
         return
 
-    channels_text = "\n".join(f"{i}\\. [{processing.escape_markdown(channel[1])}]({processing.escape_markdown(channel[0])})" for i, channel in enumerate(channels, start=1))
+    channels_text = "\n".join(f"{i}\\. [{processing.convert_to_telegram_markdown(channel[1])}]({processing.convert_to_telegram_markdown(channel[0])})" for i, channel in enumerate(channels, start=1))
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="Добавить канал", callback_data="add_channel")],
         [InlineKeyboardButton(text="Удалить канал", callback_data=states.SelectDeleteCallback(count=','.join(str(el) for el in range(1, len(channels)+1))).pack())]
