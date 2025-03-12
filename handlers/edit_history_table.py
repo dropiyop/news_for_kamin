@@ -22,6 +22,7 @@ async def delete_buttons(message: aiogram.types.Message) -> None:
 
 
 
+
 @dp.callback_query(lambda c: c.data == "yes")
 async def yes(callback: types.CallbackQuery):
     user_id = callback.from_user.id

@@ -75,6 +75,9 @@ async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chose
             # Если подтем нет, очищаем словарь для этого пользователя
             user_chosen_themes[user_id] = []
 
+    elif chosen_id == '' or not chosen_id:
+        user_chosen_themes[user_id] = []
+
     # Получаем текущий список тем для отображения
     if user_id in user_chosen_themes and user_chosen_themes[user_id]:
         themes = ",\n\n".join(user_chosen_themes[user_id])
@@ -188,23 +191,26 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
     for local_index, (subtopic_title, count) in enumerate(topics_page):
         display_number = local_index + 1  # Последовательный номер для отображения
         frequency = history_counts.get(subtopic_title, 0)
-        # Получаем список фактических id для этой темы
-        actual_ids = grouped_ids.get(subtopic_title, [])
-        # Объединяем их в строку, разделённую запятыми
-        actual_id = actual_ids[0] if actual_ids else 0
-        # Отображаем галочку, если фактический id уже выбран, иначе показываем порядковый номер
-        button_text = f"✅ {display_number}" if actual_id in chosen_id_list  else str(display_number)
-        text += f"{display_number}. {subtopic_title} *[{frequency}]*\n"
-        row.append(InlineKeyboardButton(
-            text=button_text,
-            callback_data=states.ChooseCallback(
-                n=actual_id,  # фактический id подтемы
-                c=len(count_dict),
-                chosen_id=chosen_id,  # все фактические id для этой подтемы
-                page=page,
-                gen_id=gen_id
-                ).pack()
-            ))
+
+        if frequency > 0:
+
+            # Получаем список фактических id для этой темы
+            actual_ids = grouped_ids.get(subtopic_title, [])
+            # Объединяем их в строку, разделённую запятыми
+            actual_id = actual_ids[0] if actual_ids else 0
+            # Отображаем галочку, если фактический id уже выбран, иначе показываем порядковый номер
+            button_text = f"✅ {display_number}" if actual_id in chosen_id_list  else str(display_number)
+            text += f"{display_number}. {subtopic_title} *[{frequency}]*\n"
+            row.append(InlineKeyboardButton(
+                text=button_text,
+                callback_data=states.ChooseCallback(
+                    n=actual_id,  # фактический id подтемы
+                    c=len(count_dict),
+                    chosen_id=chosen_id,  # все фактические id для этой подтемы
+                    page=page,
+                    gen_id=gen_id
+                    ).pack()
+                ))
         if len(row) == 5:
             builder.row(*row)
             row = []
@@ -233,6 +239,12 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
         ))
     if navigation_buttons:
         builder.row(*navigation_buttons)
+
+    if chosen_id:
+        builder.row(InlineKeyboardButton(
+            text="Сгенерировать новость",
+            callback_data=states.GenerateCallback(chosen_id=chosen_id).pack()
+            ))
 
      # Добавляем кнопку для возврата к глобальным темам
     builder.row(InlineKeyboardButton(
