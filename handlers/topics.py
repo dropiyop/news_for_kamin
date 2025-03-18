@@ -165,10 +165,7 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
         # Получаем количество появлений в истории чата (0, если тема не встречается)
         history_counts[topic] = count_history.get(topic, 0)
 
-
-
     grouped_ids = df_subtop.groupby('title')['subtopic_id'].apply(list).to_dict()
-
 
     page_size = 10
     total_pages = (len(count_dict) // page_size) + (1 if len(count_dict) % page_size != 0 else 0)
@@ -192,25 +189,25 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
         display_number = local_index + 1  # Последовательный номер для отображения
         frequency = history_counts.get(subtopic_title, 0)
 
-        if frequency > 0:
+        # if frequency > 0:
 
-            # Получаем список фактических id для этой темы
-            actual_ids = grouped_ids.get(subtopic_title, [])
-            # Объединяем их в строку, разделённую запятыми
-            actual_id = actual_ids[0] if actual_ids else 0
-            # Отображаем галочку, если фактический id уже выбран, иначе показываем порядковый номер
-            button_text = f"✅ {display_number}" if actual_id in chosen_id_list  else str(display_number)
-            text += f"{display_number}. {subtopic_title} *[{frequency}]*\n"
-            row.append(InlineKeyboardButton(
-                text=button_text,
-                callback_data=states.ChooseCallback(
-                    n=actual_id,  # фактический id подтемы
-                    c=len(count_dict),
-                    chosen_id=chosen_id,  # все фактические id для этой подтемы
-                    page=page,
-                    gen_id=gen_id
-                    ).pack()
-                ))
+        # Получаем список фактических id для этой темы
+        actual_ids = grouped_ids.get(subtopic_title, [])
+        # Объединяем их в строку, разделённую запятыми
+        actual_id = actual_ids[0] if actual_ids else 0
+        # Отображаем галочку, если фактический id уже выбран, иначе показываем порядковый номер
+        button_text = f"✅ {display_number}" if actual_id in chosen_id_list  else str(display_number)
+        text += f"{display_number}. {subtopic_title} *[{frequency}]*\n"
+        row.append(InlineKeyboardButton(
+            text=button_text,
+            callback_data=states.ChooseCallback(
+                n=actual_id,  # фактический id подтемы
+                c=len(count_dict),
+                chosen_id=chosen_id,  # все фактические id для этой подтемы
+                page=page,
+                gen_id=gen_id
+                ).pack()
+            ))
         if len(row) == 5:
             builder.row(*row)
             row = []
@@ -577,7 +574,8 @@ async def top_themes(user_id):
         f"Сделай список из 10 глобальных IT-тем и подтем ТОЛЬКО на основе этих тем из словаря {counts_dict}\n"
         f"Если темы одинаковые, то выбери только одну"
         f"НЕ ПРИДУМЫВАЙ ПОДТЕМЫ, используй только те, что есть. НЕЛЬЗЯ ПРИДУМЫВАТЬ ДРУГИЕ ПОДТЕМЫ"
-        f"У тебя есть только словарь с темами, не вздумай придумывать свои подтемы "
+        f"У тебя есть только словарь с темами, не вздумай придумывать свои подтемы"
+        f"Если ты добавишь свою подтему, у меня сломается база данных, пожалуйста, сортируй только предоставленные темы!"
         f"Группируй темы чтобы они как можно лучше соответствовали друг другу!"
         f"В каждой глобальной теме должно быть минимум 3 подтем. Должны быть рассортированы все темы, даже если ты получил 100 тем"
         f"То ты должен их все рассортировать"
