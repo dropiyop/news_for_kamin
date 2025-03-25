@@ -109,10 +109,7 @@ async def shedule_title():
 
                 print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
 
-        await top_themes(user_id)
 
-    user_id = "357981474"
-    await bot.send_message(chat_id=user_id,text="Я нашел новости по расписанию")
 
 
 
@@ -148,9 +145,4 @@ def delete_history():
     print(f"Планировщик удаления запущен на ближайшую субботу в 23:59")
     scheduler_delete.start()
 
-# async def scheduled_task():
-#     print("Запускаю `shedule_title()` в 00:01...")
-#     await shedule_title()
-#
-#
 

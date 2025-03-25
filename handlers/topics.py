@@ -23,6 +23,9 @@ import re
 @dp.message(aiogram.F.text.lower() == "темы недели")
 async def button_channels(message: aiogram.types.Message) -> None:
     user_id = message.from_user.id
+
+    await top_themes(user_id)
+
     history = editabs.get_top(user_id , gen_id=None)
     chosen_id = ""
     chann = editabs.get_user_channels(user_id)
@@ -577,7 +580,7 @@ async def top_themes(user_id):
         f"У тебя есть только словарь с темами, не вздумай придумывать свои подтемы"
         f"Если ты добавишь свою подтему, у меня сломается база данных, пожалуйста, сортируй только предоставленные темы!"
         f"Группируй темы чтобы они как можно лучше соответствовали друг другу!"
-        f"В каждой глобальной теме должно быть минимум 3 подтем. Должны быть рассортированы все темы, даже если ты получил 100 тем"
+        f"В каждой глобальной теме должно быть минимум 5 подтем. Должны быть рассортированы все темы, даже если ты получил 100 тем"
         f"То ты должен их все рассортировать"
         f"Если уже есть основная тема и она подходит, то ни в коем случае не создавай новую - пользуйся той, что уже есть"
         f"Если подтему можно добавить в уже существующую тему - сделай это"
@@ -844,5 +847,5 @@ async def gen_titles_for_titles(channel_link, chat_id):
 
             print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
 
-    await top_themes(chat_id)
+    # await top_themes(chat_id)
     await  bot.send_message(chat_id, text="Я закончил")
