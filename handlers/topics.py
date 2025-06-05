@@ -1,11 +1,8 @@
 import asyncio
 import json
 from itertools import count
-
 import aiogram.enums
-from numpy.ma.core import choose
 from pandas.core.interchange.dataframe_protocol import DataFrame
-from urllib3 import proxy_from_url
 import editabs
 from init_client import *
 from . import buttons, processing, tg_parse, news, channels

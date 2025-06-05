@@ -19,15 +19,6 @@ async def send_long_message(chat_id, text, bot, reply_markup=None, parse_mode="M
                                )
 
 
-@dp.callback_query(lambda c: c.data == "back_to_main")
-async def back_to_main(callback: types.CallbackQuery):
-
-    await callback.message.edit_text("Давай, придумывай", parse_mode="Markdown",reply_markup=buttons.get_inline_keyboard())
-
-
-@dp.callback_query(lambda c: c.data == "toggle_prompt")
-async def toggle_prompt_handler(callback_query: types.CallbackQuery, state: FSMContext):
-    user_id = callback_query.from_user.id
 
 
 

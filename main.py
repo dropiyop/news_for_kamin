@@ -5,6 +5,9 @@ from handlers import *
 from handlers import shedule
 from  aiog import *
 import asyncio
+import  logging
+
+logging.basicConfig(level=logging.INFO)
 
 async def main():
     shedule.prepare_schedulers()

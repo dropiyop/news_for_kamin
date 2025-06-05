@@ -1,6 +1,5 @@
 import json
 from pydoc_data.topics import topics
-
 import apscheduler
 from .topics import top_themes
 from handlers import tg_parse
