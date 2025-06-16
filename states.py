@@ -20,6 +20,9 @@ class ChooseCallback(aiogram.filters.callback_data.CallbackData, prefix="choose"
     page: int
     gen_id: int
 
+class ModeCallback(aiogram.filters.callback_data.CallbackData, prefix="mode"):
+    mode: str = None
+
 class GenerateCallback(aiogram.filters.callback_data.CallbackData, prefix="generate"):
     chosen_id: str
 

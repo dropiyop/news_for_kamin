@@ -43,6 +43,16 @@ def init_db():
     """)
 
 
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS user_modes (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        user_id INTEGER UNIQUE NOT NULL,
+        mode TEXT NOT NULL DEFAULT 'ai',
+        days INTEGER NOT NULL DEFAULT 1
+        )
+        """
+        )
 
     # Таблица для инициализированных клиентов
     cursor.execute("""

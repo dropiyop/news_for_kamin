@@ -2,7 +2,7 @@ from pyexpat.errors import messages
 
 from database import  get_connection
 import json
-
+import logging
 
 def add_user_channel(user_id, channel, channel_name):
 
@@ -103,7 +103,7 @@ def get_client_users():
     conn.close()
 
     # Если результат найден, возвращаем user_id, иначе None
-    return result if result else None
+    return result if result else []
 
 
 def remove_user(user_id):
@@ -143,6 +143,20 @@ def delete_chat_history(user_id):
 
     conn.commit()
     conn.close()
+
+def delete_gen_sub_top(user_id):
+
+    """Удаляет историю сообщений только для указанного `user_id`"""
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    cursor.execute("DELETE FROM chat_history WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM generalized_topics WHERE user_id = ?", (user_id,))
+    cursor.execute("DELETE FROM subtopics WHERE user_id = ?", (user_id,))
+
+    conn.commit()
+    conn.close()
+
 
 def delete_all_history():
 
@@ -345,7 +359,7 @@ def get_subtop(user_id, gen_id):
     return subtopics
 
 
-def get_selected_subtopics(user_id, subtopic_ids):
+def get_selected_subtopics(user_id, subtopic_ids=None):
     """
     Получает список конкретных подтем для пользователя по их ID.
 
@@ -383,6 +397,93 @@ def get_description_by_url(url):
     conn.close()
 
     return result[0] if result else None
+
+import sqlite3
+
+def set_user_mode(user_id: int, mode: str):
+
+    # Получаем соединение
+    conn = get_connection()
+    if conn is None:
+        logging.error("Не удалось получить соединение с базой данных")
+        return False
+
+    cursor = conn.cursor()
+
+    # Проверяем текущее значение режима
+    cursor.execute("SELECT mode FROM user_modes WHERE user_id = ?", (user_id,))
+
+    # Используем INSERT OR REPLACE для обновления существующей записи
+    cursor.execute("""
+            INSERT OR REPLACE INTO user_modes (user_id, mode)
+            VALUES (?, ?)
+        """, (user_id, mode))
+
+    # Проверяем количество затронутых строк
+    rows_affected = cursor.rowcount
+
+    # Коммитим изменения
+    conn.commit()
+    conn.close()
+    return True or False
+
+def get_user_mode(user_id: int):
+
+    try:
+            conn = get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT mode FROM user_modes WHERE user_id = ?
+            """, (user_id,))
+
+            result = cursor.fetchone()
+
+            if result:
+                return result[0]
+            else:
+                # Если режим не установлен, возвращаем дефолтный 'ai'
+                return
+
+    except Exception as e:
+        logging.error(f"Ошибка получения режима для пользователя {user_id}: {e}")
+        return
+
+def save_user_days(user_id: int, days: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE user_modes SET days = ? WHERE user_id = ?",
+        (days, user_id)
+    )
+    if cursor.rowcount == 0:
+        cursor.execute(
+            "INSERT INTO user_modes (user_id, days) VALUES (?, ?)",
+            (user_id, days)
+        )
+    conn.commit()
+    conn.close()
+
+def get_user_days(user_id: int):
+
+    try:
+            conn = get_connection()
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT days FROM user_modes WHERE user_id = ?
+            """, (user_id,))
+
+            result = cursor.fetchone()
+
+            if result:
+                return result[0]
+            else:
+                return 1
+
+    except Exception as e:
+        logging.error(f"Ошибка получения режима для пользователя {user_id}: {e}")
+        return 1
 
 
 

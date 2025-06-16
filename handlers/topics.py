@@ -1,11 +1,14 @@
 import asyncio
 import json
 from itertools import count
+
 import aiogram.enums
 from pandas.core.interchange.dataframe_protocol import DataFrame
+from pyexpat.errors import messages
 import editabs
+from editabs import save_user_days
 from init_client import *
-from . import buttons, processing, tg_parse, news, channels
+from .import buttons, processing, tg_parse, news, channels, mode_keyboard
 from . import news as package_news
 from . import  processing
 from aiog import *
@@ -13,7 +16,90 @@ import chat
 import pandas
 import states
 import re
+from simple_tg_md import convert_to_md2
 
+
+@dp.message(aiogram.F.text.lower() == "настройки")
+async def handle_mode_button(message: aiogram.types.Message):
+
+    user_id = message.from_user.id
+
+    inline_keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(
+                    text="Режим",
+                    callback_data="mode"
+                    ),
+                ],
+               [ InlineKeyboardButton(
+                    text="Дни",
+                    callback_data="mode_days"),
+                ]
+            ]
+        )
+
+    await message.answer(
+        "Ваши настройки",
+        reply_markup=inline_keyboard
+        )
+
+
+
+@dp.callback_query(aiogram.F.data == "mode")
+async def user_mode(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
+
+    current_mode = editabs.get_user_mode(user_id)
+
+    await callback.message.edit_text(
+    f"⚙️ Настройка режима работы\n\n"
+    f"Текущий режим: {current_mode}\n\n"
+    f"Выберите режим работы бота:",
+    reply_markup=buttons.mode_keyboard()
+    )
+
+
+# Обработчик выбора режима
+@dp.callback_query(states.ModeCallback.filter())
+async def handle_mode_callback(callback: types.CallbackQuery, callback_data: states.ModeCallback):
+    """Основной обработчик callback для режимов"""
+
+    user_id = callback.from_user.id
+    # Обработка выбора режима
+    mode = callback_data.mode
+    print(f"Выбран режим: {mode} пользователем {user_id}")
+
+    keyboard_days = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Дни",
+                callback_data="mode_days"
+                )]
+            ]
+        )
+    try:
+        success = editabs.set_user_mode(user_id, mode)
+        print (success)
+        if success:
+            current_mode = editabs.get_user_mode(user_id)
+            await callback.message.edit_text(
+                f"✅ Режим успешно изменен на {current_mode}, выберите количество дней",
+                parse_mode= aiogram.enums.ParseMode.MARKDOWN_V2,
+                reply_markup=keyboard_days
+                )
+        else:
+            await callback.message.edit_text(
+               f"❌ Ошибка при сохранении режима\n\n"
+                "Попробуйте еще раз или обратитесь к администратору."
+                )
+    except Exception as e:
+        await callback.message.edit_text(
+            f"❌ Ошибка: {str(e)}"
+            )
+
+    # Подтверждаем обработку callback
+    await callback.answer()
 
 
 
@@ -21,30 +107,63 @@ import re
 async def button_channels(message: aiogram.types.Message) -> None:
     user_id = message.from_user.id
 
-    await top_themes(user_id)
+    history = editabs.get_chat_history(user_id)
+    if history:
 
-    history = editabs.get_top(user_id , gen_id=None)
-    chosen_id = ""
-    chann = editabs.get_user_channels(user_id)
-    if not history or not chann:
-        await bot.send_message(chat_id=user_id, text="А тем нет:(",reply_markup=buttons.parse_sevendays())
-        await channels.button_channels(message)
+        await bot.send_message(user_id,'скоро все будет', parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2)
+
+        await top_themes(user_id)
 
 
+        history_top = editabs.get_top(user_id , gen_id=None)
+        chosen_id = ""
+
+
+        if not history_top:
+            return
+        else:
+            df = pandas.DataFrame(history_top)
+            counts = df['title'].value_counts()
+            counts_dict = counts.to_dict()
+
+            await send_group_list(message, user_id, chosen_id, counts_dict,page=0)
     else:
-        df = pandas.DataFrame(history)
-        counts = df['title'].value_counts()
-        counts_dict = counts.to_dict()
 
-        await send_group_list(message, user_id, chosen_id, counts_dict,page=0)
+        user_chann = editabs.get_user_channels(user_id)
+
+        if not user_chann:
+            await bot.send_message(chat_id=user_id,
+                                   text="Список каналов пуст. Воспользуйтесь кнопкой ниже для добавления",
+                                   reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Добавить канал", callback_data="add_channel")]]))
+            return
+        else:
+
+            user_chann = editabs.get_user_channels(user_id)
+
+            links, names = zip(*user_chann)
+
+            channels_text = "\n".join([
+                f"[{convert_to_md2(name)}]({convert_to_md2(link)})"
+                for name, link in zip(names, links)
+                ])
+
+            print(channels_text)
+            await bot.send_message(
+                chat_id=user_id,
+                text=convert_to_md2(f"А тем нет:(\n\n*Список каналов:*\n\n")+channels_text,
+                parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2,
+                reply_markup=buttons.parse_sevendays(user_id),
+                disable_web_page_preview=True
+                )
+
+
 
 user_chosen_themes = {}
+
 async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chosen=None):
     global user_chosen_themes
     if chosen is None:
         chosen = []  # список выбранных тем
-
-
 
     print(f"send_group_list {chosen_id}")
     print(user_id)
@@ -84,8 +203,8 @@ async def send_group_list(message, user_id, chosen_id, count_dict, page=0, chose
     else:
         themes = ""
 
-
-    text = ("*Вот список обобщенных  тем, о которых говорили за прошлую неделю:*\n"
+    days = editabs.get_user_days(user_id)
+    text = (f"*Вот список обобщенных тем, о которых говорили в ваших телеграмм каналах:*\n"
             "_Выбрав одну из тем - можно увидеть список подтем_\n\n"
             "_Выберите на клавиатуре номера тем_\n\n"
             f"Всего тем: {all_dict}\n\n"
@@ -173,7 +292,6 @@ async def send_sub_topics_page(callback: types.CallbackQuery, callback_data: sta
     start_idx = page * page_size
     end_idx = start_idx + page_size
     topics_page = list(count_dict.items())[start_idx:start_idx + page_size]
-    print(topics_page)
 
 
     text = (f"*{gen_title}:*\n"
@@ -277,7 +395,6 @@ async def navigate_page(callback: types.CallbackQuery, callback_data: states.Num
     gen_title = editabs.get_top(user_id, gen_id=gen_id)
     title_df = pandas.DataFrame(gen_title)
     gen_title = title_df['title'].to_list()
-    print(gen_title)
     gen_title = ",".join(gen_title)
 
     history = editabs.get_subtop(user_id, gen_id)
@@ -388,13 +505,6 @@ async def add_topic_request(callback: types.CallbackQuery,  callback_data: state
 
     history = editabs.get_subtop(user_id,gen_id)
 
-
-    if not history:
-        await bot.send_message(
-            chat_id=user_id,
-            text="А тем нет:(",
-            reply_markup=buttons.parse_sevendays()
-        )
 
     df = pandas.DataFrame(history)
     counts = df['title'].value_counts()
@@ -545,11 +655,12 @@ async def add_topic(callback: types.CallbackQuery):
 
 
     selected_topics = counts
+    print(selected_topics)
     if not selected_topics:
         await callback.answer("Вы не выбрали ни одной темы!", show_alert=True)
         return
 
-        # Вызываем генерацию
+
     await news.generate_news(callback, selected_topics)
 
 
@@ -559,119 +670,159 @@ async def top_themes(user_id):
     Отправляет запрос в GPT для генерации 10 общих тем с вложенными подтемами.
     Возвращает JSON со структурой {id: {общая_тема, подтемы}}.
     """
-
     history = editabs.get_chat_history(user_id, "assistant", title = 1)
     gen_titles = editabs.get_top(user_id)
-
+    user_chann = editabs.get_user_channels(user_id)
+    text = f"А тем нет:(\n\nВаши каналы:\n\n{user_chann}"
     df  = pandas.DataFrame(history)
-    df = df[df['title'] != 'НЕ ПО ТЕМЕ']
-    counts_dict = df.to_dict()
+    print(df)
+    if not user_chann:
+        await bot.send_message(chat_id=user_id,
+            text="Список каналов пуст. Воспользуйтесь кнопкой ниже для добавления",
+            reply_markup=InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="Добавить канал", callback_data="add_channel")]]))
+        return
 
-    print (counts_dict)
+    if df.empty:
+        await bot.send_message(chat_id=user_id, text=processing.escape_markdown_v2(text), parse_mode=aiogram.enums.ParseMode.MARKDOWN_V2, reply_markup=buttons.parse_sevendays(user_id), disable_web_page_preview=True)
+    else:
+        df = df[df['title'] != 'НЕ ПО ТЕМЕ']
+        counts_dict = df.to_dict()
+
+        print (counts_dict)
 
 
-    prompt = (
-        f"Сделай список из 10 глобальных IT-тем и подтем ТОЛЬКО на основе этих тем из словаря {counts_dict}\n"
-        f"Если темы одинаковые, то выбери только одну"
-        f"НЕ СОРТИРУЙ так, чтобы одна и та же тема была в  2 разных глобальных категориях"
-        f"НЕ ПРИДУМЫВАЙ ПОДТЕМЫ, используй только те, что есть. НЕЛЬЗЯ ПРИДУМЫВАТЬ ДРУГИЕ ПОДТЕМЫ"
-        f"У тебя есть только словарь с темами, не вздумай придумывать свои подтемы"
-        f"Если ты добавишь свою подтему, у меня сломается база данных, пожалуйста, сортируй только предоставленные темы!"
-        f"Группируй темы чтобы они как можно лучше соответствовали друг другу!"
-        f"В каждой глобальной теме должно быть минимум 5 подтем. Должны быть рассортированы все темы, даже если ты получил 100 тем"
-        f"То ты должен их все рассортировать"
-        f"Если уже есть основная тема и она подходит, то ни в коем случае не создавай новую - пользуйся той, что уже есть"
-        f"Если подтему можно добавить в уже существующую тему - сделай это"
-        "- Название общей темы НИКОГДА НЕ ДОЛЖНО ПОВТОРЯТЬСЯ (`title`).\n"
-        f"- Дай список подтем (`subtopics`)\n"
-        f"То есть ты сначала формируешь глобальные темы на основе всего словаря который я тебе присылаю, а затем добавляешь подтемы на основе того же словаря"
-        f"В уже созданные тобой глобальные темы"
-        # "- Имеет `id`, связанный с общей темой (например, если `id` общей темы = 1, то её подтемы могут быть 101, 102, 103).\n"
-        # "- Имеет название `title`.\n\n"
-        "Ответ верни **в формате JSON** с ключами `topics`, вложенность должна быть строгой.\n"
-        "Пример JSON:\n"
-        "{\n"
-        '  "topics": [\n'
-        '    { "id": 1, "title": "Искусственный интеллект", "subtopics": [\n'
-        '      { "id": 101, "title": "Обработка естественного языка" },\n'
-        '      { "id": 102, "title": "Компьютерное зрение" }\n'
-        "    ] },\n"
-        "    { \"id\": 2, \"title\": \"Кибербезопасность\", \"subtopics\": [\n"
-        "      { \"id\": 201, \"title\": \"Шифрование данных\" },\n"
-        "      { \"id\": 202, \"title\": \"Атаки на нейросети\" }\n"
-        "    ] }\n"
-        "  ]\n"
-        "}"
-    )
 
-    response = await openai_client.chat.completions.create(
-        model="gpt-4o-mini",
-        messages=[
-            {"role": "system", "content": "Ты создаёшь структурированные IT-темы для базы данных."},
-            {"role": "user", "content": prompt}
-            ],
-        response_format={
-            "type": "json_schema",
-            "json_schema": {
-                "name": "topic_hierarchy",
-                "schema": {
-                    "type": "object",
-                    "properties": {
-                        "topics": {
-                            "type": "array",
-                            "items": {
-                                "type": "object",
-                                "properties": {
-                                    "id": {"type": "integer"},
-                                    "title": {"type": "string"},
-                                    "subtopics": {
-                                        "type": "array",
-                                        "items": {
-                                            "type": "object",
-                                            "properties": {
-                                                "id": {"type": "integer"},
-                                                "title": {"type": "string"}
-                                                },
-                                            "required": ["id", "title"],
-                                            "additionalProperties": False
-                                            }
+
+        current_mode = editabs.get_user_mode(user_id)
+
+        if current_mode == "hr" and not df.empty:
+            with open('promts/hr_top.md', 'r', encoding='utf-8') as file_hr:
+                prompt_hr = file_hr.read()
+                print (prompt_hr)
+
+
+            response = await openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Ты создаёшь структурированные HR-темы для базы данных."},
+                    {"role": "user", "content": f"{prompt_hr} ТОЛЬКО на основе этих тем из словаря {counts_dict}"}
+                    ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "topic_hierarchy",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "topics": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "title": {"type": "string"},
+                                            "subtopics": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "title": {"type": "string"}
+                                                        },
+                                                    "required": ["id", "title"],
+                                                    "additionalProperties": False
+                                                    }
+                                                }
+                                            },
+                                        "required": ["id", "title", "subtopics"]
                                         }
-                                    },
-                                "required": ["id", "title", "subtopics"]
-                                }
+                                    }
+                                },
+                            "strict": True
                             }
-                        },
-                    "strict": True
-                    }
-                }
-            },
-        temperature=0.2
-        )
+                        }
+                    },
+                temperature=0.2
+                )
+
+            print(response)
+            response_json = json.loads(response.choices[0].message.content)
+
+            editabs.save_top_subtop(response_json, user_id)
+
+            return response_json
+
+        if current_mode == "ai" and not df.empty:
+            with open('promts/ai_top.md', 'r', encoding='utf-8') as file_ai:
+                prompt_ai = file_ai.read()
+
+            response = await openai_client.chat.completions.create(
+                model="gpt-4o-mini",
+                messages=[
+                    {"role": "system", "content": "Ты создаёшь структурированные IT-темы для базы данных."},
+                    {"role": "user", "content": f"{prompt_ai} ТОЛЬКО на основе этих тем из словаря {counts_dict}"}
+                    ],
+                response_format={
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "topic_hierarchy",
+                        "schema": {
+                            "type": "object",
+                            "properties": {
+                                "topics": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "properties": {
+                                            "id": {"type": "integer"},
+                                            "title": {"type": "string"},
+                                            "subtopics": {
+                                                "type": "array",
+                                                "items": {
+                                                    "type": "object",
+                                                    "properties": {
+                                                        "id": {"type": "integer"},
+                                                        "title": {"type": "string"}
+                                                        },
+                                                    "required": ["id", "title"],
+                                                    "additionalProperties": False
+                                                    }
+                                                }
+                                            },
+                                        "required": ["id", "title", "subtopics"]
+                                        }
+                                    }
+                                },
+                            "strict": True
+                            }
+                        }
+                    },
+                temperature=0.2
+                )
+
+            response_json = json.loads(response.choices[0].message.content)
 
 
-    response_json = json.loads(response.choices[0].message.content)
+            editabs.save_top_subtop(response_json, user_id)
 
-    print (response_json)
+            return response_json
 
-    editabs.save_top_subtop(response_json, user_id)
-
-    return response_json
 
 
 
 @dp.callback_query(aiogram.F.data == "parse_sevendays")
 async def manual_parse(callback_query: types.CallbackQuery):
-
     chat_id = callback_query.message.chat.id
 
-    await bot.send_message(chat_id=chat_id, text = "Я начал собирать посты с добавленных каналов за 7 дней")
+    days = editabs.get_user_days(chat_id)
+    await bot.send_message(chat_id=chat_id, text = f"Я начал собирать посты с добавленных каналов за {days} дней")
 
     print(chat_id)
     links = editabs.get_user_url_channel(chat_id)
 
     for channel_link, in links:
 
-        messages = await tg_parse.parse(channel_link, days=7)
+        messages = await tg_parse.parse(channel_link, days=days)
         if isinstance(messages, str):
             await bot.send_message(chat_id, messages)
             return
@@ -694,7 +845,7 @@ async def manual_parse(callback_query: types.CallbackQuery):
 
 
         for description in selected_description:
-            print(description)
+
             history = editabs.get_chat_history(chat_id, role ="assistant", title=1)
             df = pandas.DataFrame(history)
 
@@ -705,75 +856,131 @@ async def manual_parse(callback_query: types.CallbackQuery):
 
             print(counts)
 
-            chat_messages = chat.MessageHistory().add_message(
-                role=chat.Message.ROLE_SYSTEM,
-                content=f"Твоя задача - определить основную тему поста о нейронных сетях и искусственном интеллекте. \n" \
-                        f"Тема должна отражать конкретные сущности, о которых идет речь в тексте, анализируй весь контент, а не только первые слова, \n" \
-                        f"НЕ ИСПОЛЬЗУЙ ЗНАКИ ПРЕПИНАНИЯ, избегай слов-клише 'Новое', 'Оптимизация', 'Улучшения', 'Обновления', \n" \
-                        f"формулируй подробную тему. Если в новости упоминается конкретный продукт, группируй их в одну тему. \n" \
-                        f"Примеры хороших тем: 'Улучшения в нейросетевых моделях на примере GPT-4.5', 'Тренды и навыки в ML-инженерии на 2025 год', \n" \
-                        f"'Интеграция ChatGPT в образовательные учреждениях для учеников старших классов'. \n" \
-                        f"Игнорируй посты с хэштегом #Реклама"
-                        f"К рекламе также относятся заголовки на подобии:"
-                        f"Вебинар AI-агенты на практике: глубоко и по существу"
-                        f"Введение в AI-агентов и их применение в бизнесе на примере вебинара от Сбера"
-                        f"Вакансии в области NLP и CV в Европе и России с акцентом на удаленную работу "
-                        f"Инструменты искусственного интеллекта для поддержания здоровья и благополучия на примере 'здесь программа'"
-                        f"Использование Gen-AI в музыкальной платформе Soundverse для создания музыки начинающими музыкантами"
-                        f"Инструмент Zebracat для создания маркетинговых видео с использованием искусственного интеллекта"
-                        f"Тренировки по ML от яндекса с акцентом на компьютерное зрение и генеративные модели"
-                        f"НЕ ИСПОЛЬЗУЙ ПОДОБНЫЕ ЗАГОЛОВКИ"
-                        f"НЕ анализируй тексты короче 50 символов, \n" \
-                        f"если пост не относится к ИИ или нейросетям, верни 'НЕ ПО ТЕМЕ'. \n" \
-                        f"Сверься со списком существующих тем: {counts}, \n" \
-                        f"если текст подходит под существующую тему (содержит те же сущности или упоминает тот же продукт), используй ее, \n" \
-                        f"если текст значительно отличается, создай новую тему.").add_message(
-                role=chat.Message.ROLE_USER,
-                content=f"{description['message']}")
 
-            response = await openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=chat_messages.to_api_format(),
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "titles",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "title": {"type": "string"}
+            current_mode = editabs.get_user_mode(chat_id)
+
+
+            if current_mode == "hr":
+                with open('promts/hr_manul.md', 'r', encoding='utf-8') as file_hr:
+                    prompt_hr = file_hr.read()
+
+                # Создаем историю сообщений
+                chat_messages = chat.MessageHistory()
+
+                # Добавляем системное сообщение
+                chat_messages.add_message(
+                    role=chat.Message.ROLE_SYSTEM,
+                    content=prompt_hr
+                    )
+
+                # Добавляем пользовательское сообщение
+                chat_messages.add_message(
+                    role=chat.Message.ROLE_USER,
+                    content=f"{description['message']}"
+                    )
+
+                response = await openai_client.chat.completions.create(
+                    model="gpt-4o-mini",
+                    messages=chat_messages.to_api_format(),
+                    response_format={
+                        "type": "json_schema",
+                        "json_schema": {
+                            "name": "titles",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "title": {"type": "string"}
+                                },
+                                "required": ["title"],
+                                "additionalProperties": False
+                                },
+                            "strict": True
+                            }
+                        },
+                    temperature=0.4
+                    )
+
+                response_json = json.loads(response.choices[0].message.content)
+
+
+                topic_id = 1
+                title = response_json.get("title").strip()
+                text = description['message']
+                url = description['link']
+
+                df = df[df['title'] != 'НЕ ПО ТЕМЕ'] if 'title' in df.columns else df
+
+                editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
+                print(chat_id)
+
+                print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
+
+                await top_themes(chat_id)
+
+
+
+            if current_mode == "ai":
+
+                with open('promts/ai_manul.md', 'r', encoding='utf-8') as file_ai:
+                    prompt_ai = file_ai.read()
+
+                    # Создаем историю сообщений
+                    chat_messages = chat.MessageHistory()
+
+                    # Добавляем системное сообщение
+                    chat_messages.add_message(
+                        role=chat.Message.ROLE_SYSTEM,
+                        content=prompt_ai
+                        )
+
+                    # Добавляем пользовательское сообщение
+                    chat_messages.add_message(
+                        role=chat.Message.ROLE_USER,
+                        content=f"{description['message']}"
+                        )
+                    response = await openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=chat_messages.to_api_format(),
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "titles",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"}
+                                        },
+                                    "required": ["title"],
+                                    "additionalProperties": False
+                                    },
+                                "strict": True
+                                }
                             },
-                            "required": ["title"],
-                            "additionalProperties": False
-                            },
-                        "strict": True
-                        }
-                    },
-                temperature=0.4
-                )
+                        temperature=0.4
+                        )
 
-            response_json = json.loads(response.choices[0].message.content)
+                    response_json = json.loads(response.choices[0].message.content)
 
+                    topic_id = 1
+                    title = response_json.get("title").strip()
+                    text = description['message']
+                    url = description['link']
 
-            topic_id = 1
-            title = response_json.get("title").strip()
-            text = description['message']
-            url = description['link']
+                    editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
+                    print(chat_id)
 
+                    print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
 
+                    await top_themes(chat_id)
 
-            editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
-            print(chat_id)
-
-            print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
-
-    await top_themes(chat_id)
-    await  bot.send_message(chat_id, text="Я закончил")
+    await bot.send_message(chat_id, text='я закончил, нажмите темы недели')
 
 
 async def gen_titles_for_titles(channel_link, chat_id):
-    await bot.send_message(chat_id, text = f"Я начал собирать посты с {channel_link} за 7 дней", disable_web_page_preview=True)
-    messages = await tg_parse.parse(channel_link, days=7)
+    days = editabs.get_user_days(chat_id)
+
+    await bot.send_message(chat_id, text = f"Я начал собирать посты с {channel_link} за {days} дней", disable_web_page_preview=True)
+    messages = await tg_parse.parse(channel_link, days=days)
     if isinstance(messages, str):
         await bot.send_message(chat_id, messages)
         return
@@ -794,77 +1001,127 @@ async def gen_titles_for_titles(channel_link, chat_id):
                     "link": link
                     })
 
-        for description in selected_description:
+            for description in selected_description:
 
-            history = editabs.get_chat_history(chat_id, role ="assistant", title=1)
-            df = pandas.DataFrame(history)
+                history = editabs.get_chat_history(chat_id, role="assistant", title=1)
+                df = pandas.DataFrame(history)
 
-            if 'title' in df.columns:
-                counts = df['title'].unique()
-            else:
-                counts = []
+                if 'title' in df.columns:
+                    counts = df['title'].unique()
+                else:
+                    counts = []
 
-            print(counts)
+                print(counts)
 
-            chat_messages = chat.MessageHistory().add_message(
-                role=chat.Message.ROLE_SYSTEM,
-                content=f"Твоя задача - определить основную тему поста о нейронных сетях и искусственном интеллекте. \n" \
-                        f"Тема должна отражать конкретные сущности, о которых идет речь в тексте, анализируй весь контент, а не только первые слова, \n" \
-                        f"НЕ ИСПОЛЬЗУЙ ЗНАКИ ПРЕПИНАНИЯ, избегай слов-клише 'Новое', 'Оптимизация', 'Улучшения', 'Обновления', \n" \
-                        f"формулируй подробную тему. Если в новости упоминается конкретный продукт, группируй их в одну тему. \n" \
-                        f"Примеры хороших тем: 'Улучшения в нейросетевых моделях на примере GPT-4.5', 'Тренды и навыки в ML-инженерии на 2025 год', \n" \
-                        f"'Интеграция ChatGPT в образовательные учреждениях для учеников старших классов'. \n" \
-                        f"Игнорируй посты с хэштегом #Реклама"
-                        f"К рекламе также относятся заголовки на подобии:"
-                        f"Вебинар AI-агенты на практике: глубоко и по существу"
-                        f"Введение в AI-агентов и их применение в бизнесе на примере вебинара от Сбера"
-                        f"Вакансии в области NLP и CV в Европе и России с акцентом на удаленную работу "
-                        f"Инструменты искусственного интеллекта для поддержания здоровья и благополучия на примере 'здесь программа'"
-                        f"Использование Gen-AI в музыкальной платформе Soundverse для создания музыки начинающими музыкантами"
-                        f"Инструмент Zebracat для создания маркетинговых видео с использованием искусственного интеллекта"
-                        f"Тренировки по ML от яндекса с акцентом на компьютерное зрение и генеративные модели"
-                        f"НЕ ИСПОЛЬЗУЙ ПОДОБНЫЕ ЗАГОЛОВКИ"
-                        f"НЕ анализируй тексты короче 50 символов, \n" \
-                        f"если пост не относится к ИИ или нейросетям, верни 'НЕ ПО ТЕМЕ'. \n" \
-                        f"Сверься со списком существующих тем: {counts}, \n" \
-                        f"если текст подходит под существующую тему (содержит те же сущности или упоминает тот же продукт), используй ее, \n" \
-                        f"если текст значительно отличается, создай новую тему.").add_message(
+                current_mode = editabs.get_user_mode(chat_id)
 
-                role=chat.Message.ROLE_USER,
-                content=f"{description['message']}")
+                if current_mode == "hr":
+                    with open('promts/hr_manul.md', 'r', encoding='utf-8') as file_hr:
+                        prompt_hr = file_hr.read()
+                        print(prompt_hr)
+                    # Создаем историю сообщений
+                    chat_messages = chat.MessageHistory()
 
-            response = await openai_client.chat.completions.create(
-                model="gpt-4o-mini",
-                messages=chat_messages.to_api_format(),
-                response_format={
-                    "type": "json_schema",
-                    "json_schema": {
-                        "name": "titles",
-                        "schema": {
-                            "type": "object",
-                            "properties": {
-                                "title": {"type": "string"}
+                    # Добавляем системное сообщение
+                    chat_messages.add_message(
+                        role=chat.Message.ROLE_SYSTEM,
+                        content=prompt_hr
+                        )
+
+                    # Добавляем пользовательское сообщение
+                    chat_messages.add_message(
+                        role=chat.Message.ROLE_USER,
+                        content=f"{description['message']}"
+                        )
+
+                    response = await openai_client.chat.completions.create(
+                        model="gpt-4o-mini",
+                        messages=chat_messages.to_api_format(),
+                        response_format={
+                            "type": "json_schema",
+                            "json_schema": {
+                                "name": "titles",
+                                "schema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "title": {"type": "string"}
+                                        },
+                                    "required": ["title"],
+                                    "additionalProperties": False
+                                    },
+                                "strict": True
+                                }
                             },
-                            "required": ["title"],
-                            "additionalProperties": False
-                            },
-                        "strict": True
-                        }
-                    },
-                temperature=0.2
-                )
+                        temperature=0.4
+                        )
 
-            response_json = json.loads(response.choices[0].message.content)
+                    response_json = json.loads(response.choices[0].message.content)
 
+                    topic_id = 1
+                    title = response_json.get("title").strip()
+                    text = description['message']
+                    url = description['link']
 
-            topic_id = 1
-            title = response_json.get("title").strip()
-            text = description['message']
-            url = description['link']
-            editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
-            print (chat_id)
+                    df = df[df['title'] != 'НЕ ПО ТЕМЕ'] if 'title' in df.columns else df
 
-            print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
+                    editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
+                    print(chat_id)
 
-    # await top_themes(chat_id)
-    await  bot.send_message(chat_id, text="Я закончил")
+                    print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
+
+                    await top_themes(chat_id)
+
+                if current_mode == "ai":
+                    with open('promts/ai_manul.md', 'r', encoding='utf-8') as file_ai:
+                        prompt_ai = file_ai.read()
+
+                        # Создаем историю сообщений
+                        chat_messages = chat.MessageHistory()
+
+                        # Добавляем системное сообщение
+                        chat_messages.add_message(
+                            role=chat.Message.ROLE_SYSTEM,
+                            content=prompt_ai
+                            )
+
+                        # Добавляем пользовательское сообщение
+                        chat_messages.add_message(
+                            role=chat.Message.ROLE_USER,
+                            content=f"{description['message']}"
+                            )
+                        response = await openai_client.chat.completions.create(
+                            model="gpt-4o-mini",
+                            messages=chat_messages.to_api_format(),
+                            response_format={
+                                "type": "json_schema",
+                                "json_schema": {
+                                    "name": "titles",
+                                    "schema": {
+                                        "type": "object",
+                                        "properties": {
+                                            "title": {"type": "string"}
+                                            },
+                                        "required": ["title"],
+                                        "additionalProperties": False
+                                        },
+                                    "strict": True
+                                    }
+                                },
+                            temperature=0.4
+                            )
+
+                        response_json = json.loads(response.choices[0].message.content)
+
+                        topic_id = 1
+                        title = response_json.get("title").strip()
+                        text = description['message']
+                        url = description['link']
+
+                        editabs.save_chat_history(chat_id, "assistant", topic_id, title, text, url)
+                        print(chat_id)
+
+                        print(f"Обработан ссылка: {description['link']} и отправлен в GPT.")
+
+                        await top_themes(chat_id)
+
+        await bot.send_message(chat_id, text='я закончил, нажмите темы недели')

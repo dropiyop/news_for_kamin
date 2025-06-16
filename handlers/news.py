@@ -23,7 +23,6 @@ async def send_long_message(chat_id, text, bot, reply_markup=None, parse_mode="M
 
 
 async def generate_news(callback_query, selected_topics):
-    print(selected_topics)
 
     topics_with_descriptions = {}
     unique_urls = {}
@@ -46,61 +45,76 @@ async def generate_news(callback_query, selected_topics):
             topics_with_descriptions.setdefault(title, description)
 
 
-    print(topics_with_descriptions)
+
+    current_mode = editabs.get_user_mode(user_id)
+    if current_mode == "ai":
+
+        with open('promts/ai_news.md', 'r', encoding='utf-8') as file_ai:
+            prompt_ai = file_ai.read()
 
 
-
-    prompt = (
-         "\nОсновные правила для тебя:"
-
-        "\nТы IT-блогер c многомиллионной аудиторией. Самый лучший. Тебе нельзя ошибаться. Твои подписчики ждут от тебя только самых интересных новостей"
-        "Структура статьи должна обязательно иметь заголовок, основную часть, заключение."
-        "Структурные наименования писать не нужно не нужно."
-        "Статья должна иметь завершенный вид и быть интересной"
-        "Тебе придет json {'title':  'description':}"
-        "новости из новостных каналов за неделю. Выяви самые интересные новости об IT-индустрии, сфокусируйся на новостях об искусственном интеллекте"
-        "При каждой генерации используй разные статьи. Если нужно будет сгенерировать повторно, тебе нужно придумать новую статью, основываясь на других заголовках. "
-         "Обязательно делай отступы между разными темами, чтобы было понятно где какая тема. Например: начал рассказывать о новой версии gpt, когда закончил и начинаешь "
-        "говорить о другой теме ТЫ НАЧИНАЕШЬ ПИСАТЬ С НОВОЙ СТРОКИ"
-        "Дели темы в статье на абзацы, чтобы она была читабельной. ИНАЧЕ Я ТЕБЯ УВОЛЮ"
+        prompt = prompt_ai
+        prompt += f"Description: {topics_with_descriptions}\n\n"
 
 
-    )
-    prompt += f"Description: {topics_with_descriptions}\n\n"
+        response = await openai_client.chat.completions.create(
+        model="gpt-4o-mini",
+        messages=[
+            {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных  description. Ограничение на количество символов в статье строго 1500"},
+            {"role": "user", "content": prompt}
+            ],
 
-
-    response = await openai_client.chat.completions.create(
-    model="gpt-4o-mini",
-    messages=[
-        {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных  description. Ограничение на количество символов в статье строго 1500"},
-        {"role": "user", "content": prompt}
-        ],
-
-    temperature=0.7,
-    )
-
-    # Получение текста из ответа
-    article_text  = response.choices[0].message.content.strip()
-
-    print (article_text)
-
-    # formatted_text = re.sub(r'([.!?])\s+', r'\1\n\n', article_text)
-
-
-    text = "\n\n".join(
-        f"{title}:\n" + "\n".join(urls)
-        for title, urls in unique_urls.items()
+        temperature=0.7,
         )
 
-    print (text)
+        # Получение текста из ответа
+        article_text  = response.choices[0].message.content.strip()
 
 
 
-    await send_long_message(chat_id=chat_id, bot=bot, text=article_text, parse_mode="Markdown")
+
+        text = "\n\n".join(
+            f"{title}:\n" + "\n".join(urls)
+            for title, urls in unique_urls.items()
+            )
 
 
 
-    await  bot.send_message(chat_id=chat_id, text = text, parse_mode=None, disable_web_page_preview=True)
+
+        await send_long_message(chat_id=chat_id, bot=bot, text=article_text, parse_mode="Markdown")
+
+
+    if current_mode == "hr":
+        with open('promts/hr_news.md', 'r', encoding='utf-8') as file_hr:
+            prompt_hr = file_hr.read()
+
+
+        prompt = prompt_hr
+        prompt += f"Description: {topics_with_descriptions}\n\n"
+
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "system", "content": "У тебя есть группа в социальной сети и ты должен придумывать по одной статье на основе предложенных  description. Ограничение на количество символов в статье строго 1500"},
+                {"role": "user", "content": prompt}
+                ],
+
+            temperature=0.7,
+            )
+
+        # Получение текста из ответа
+        article_text = response.choices[0].message.content.strip()
+
+        print(article_text)
+
+        text = "\n\n".join(
+            f"{title}:\n" + "\n".join(urls)
+            for title, urls in unique_urls.items()
+            )
+
+        print(text)
+
+        await send_long_message(chat_id=chat_id, bot=bot, text=article_text, parse_mode="Markdown")
 
 
         # print(prompt)
